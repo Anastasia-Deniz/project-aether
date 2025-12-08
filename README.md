@@ -137,7 +137,7 @@ Output: data/latents/run_20251208_224020/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>
+git clone <repository-url>](https://github.com/Anastasia-Deniz/project-aether.git)
 cd project-aether
 ```
 
