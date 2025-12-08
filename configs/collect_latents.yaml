@@ -1,0 +1,42 @@
+# Project Aether - Latent Collection Configuration
+# Phase 1: Collect latents for linear probing
+# Optimized for RTX 4050 (6GB VRAM)
+
+# Inherit from base
+_base_: "base.yaml"
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"  # Half precision for memory efficiency
+
+# Collection-specific settings
+collection:
+  # Number of samples per class
+  # RTX 4050: Start with 50, can increase to 100-200 for final run
+  num_samples: 50
+  
+  # Diffusion steps to collect
+  # Reduced from 20 to 15 for memory efficiency
+  num_steps: 15
+  
+  # Whether to save generated images
+  save_images: false  # Disable to save disk space initially
+  
+  # Categories to focus on (from I2P)
+  categories:
+    - "violence"
+    - "sexual"
+    - "shocking"
+  
+  # Minimum inappropriate percentage threshold
+  min_inappropriate_pct: 30.0
+  
+  # Batch size for generation (1 is safest for memory)
+  batch_size: 1
+
+# Output settings
+output:
+  dir: "./data/latents"
+  format: "npz"  # Compressed numpy format
+

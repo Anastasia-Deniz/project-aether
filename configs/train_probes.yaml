@@ -1,0 +1,47 @@
+# Project Aether - Probe Training Configuration
+# Phase 1: Train linear probes to validate separability
+
+# Inherit from base
+_base_: "base.yaml"
+
+# Probe training settings
+probe:
+  # Logistic regression regularization (C parameter)
+  # Higher C = less regularization
+  regularization: 1.0
+  
+  # Test split ratio
+  test_split: 0.2
+  
+  # Maximum iterations for convergence
+  max_iter: 1000
+  
+  # Solver
+  solver: "lbfgs"
+
+# Layer sensitivity analysis
+sensitivity:
+  # How many top timesteps to consider for window
+  top_k: 5
+  
+  # Quality preservation model (heuristic parameters)
+  quality:
+    base: 0.7
+    scale: 0.3
+  
+  # Steering effectiveness model (bell curve parameters)  
+  effectiveness:
+    # Sigma as fraction of total steps
+    sigma_fraction: 0.25
+
+# Output settings
+output:
+  dir: "./checkpoints/probes"
+  save_pytorch: true
+  save_sklearn: false
+  
+# Thresholds for assessment
+thresholds:
+  good_separability: 0.85
+  moderate_separability: 0.70
+

@@ -1,0 +1,201 @@
+# ========================================
+# Project Aether - .gitignore
+# ========================================
+
+# ----------------------------------------
+# Python
+# ----------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+.venv/
+ENV/
+env/
+.env
+
+# ----------------------------------------
+# IDE / Editors
+# ----------------------------------------
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+*.sublime-project
+*.sublime-workspace
+
+# Cursor IDE
+.cursor/
+
+# ----------------------------------------
+# Jupyter Notebooks
+# ----------------------------------------
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ----------------------------------------
+# Operating System
+# ----------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ----------------------------------------
+# Data & Cache (Large files - don't commit)
+# ----------------------------------------
+data/cache/
+data/latents/
+*.npz
+*.npy
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# HuggingFace cache
+.cache/
+huggingface/
+
+# ----------------------------------------
+# Model Checkpoints (Large files)
+# ----------------------------------------
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.bin
+
+# Keep directory structure
+!checkpoints/.gitkeep
+!checkpoints/probes/.gitkeep
+!checkpoints/policies/.gitkeep
+
+# ----------------------------------------
+# Outputs & Logs
+# ----------------------------------------
+outputs/
+logs/
+runs/
+wandb/
+mlruns/
+tensorboard/
+
+# Keep directory structure
+!outputs/.gitkeep
+
+# ----------------------------------------
+# Generated Images
+# ----------------------------------------
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+
+# Exception: keep important figures
+!docs/*.png
+!figures/*.png
+
+# ----------------------------------------
+# Temporary & Test Files
+# ----------------------------------------
+tmp/
+temp/
+test_output/
+*.tmp
+*.temp
+*.log
+*.out
+
+# Test scripts (temporary)
+check_gpu.py
+test_*.py
+!scripts/test_setup.py
+
+# ----------------------------------------
+# Secrets & Credentials
+# ----------------------------------------
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+secrets/
+credentials/
+
+# HuggingFace token
+token
+.huggingface/
+
+# ----------------------------------------
+# Distribution & Packaging
+# ----------------------------------------
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# ----------------------------------------
+# Documentation Build
+# ----------------------------------------
+docs/_build/
+site/
+
+# ----------------------------------------
+# Project-Specific
+# ----------------------------------------
+# Keep config files
+!configs/*.yaml
+
+# Keep source code
+!src/**/*.py
+
+# Keep scripts
+!scripts/*.py
+
+# Keep requirements
+!requirements.txt
+
+# Keep notebooks (but not checkpoints)
+notebooks/*.ipynb
+!notebooks/.gitkeep
+
+# ----------------------------------------
+# Git
+# ----------------------------------------
+*.orig
+*.BACKUP.*
+*.BASE.*
+*.LOCAL.*
+*.REMOTE.*
+

@@ -1,0 +1,95 @@
+# Project Aether - PPO Training Configuration
+# Phase 2: Train the steering policy
+# Optimized for RTX 4050 (6GB VRAM)
+
+# Inherit from base
+_base_: "base.yaml"
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"  # CRITICAL: Half precision saves ~50% VRAM
+
+# Environment settings
+env:
+  # Using v1.5 (no HuggingFace auth required)
+  model_id: "runwayml/stable-diffusion-v1-5"
+  # REDUCED from 20 to 15 steps for RTX 4050
+  num_inference_steps: 15
+  guidance_scale: 7.5
+  
+  # Low-rank steering dimension
+  steering_dim: 256
+  
+  # Action constraints
+  max_action_norm: 0.1
+  
+  # Intervention window (adjusted for 15 steps)
+  # Update these after running Phase 1 sensitivity analysis
+  intervention_start: 6
+  intervention_end: 11
+  
+  # Latent encoder for reduced observation space
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (memory optimized)
+policy:
+  # Reduced architecture for 6GB VRAM
+  hidden_dims: [256, 128]  # Was [512, 256]
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (memory optimized for RTX 4050)
+ppo:
+  learning_rate: 3.0e-4
+  
+  # REDUCED rollout steps for memory
+  n_steps: 512  # Was 2048
+  
+  # REDUCED batch size for memory  
+  batch_size: 32  # Was 64
+  
+  n_epochs: 10
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Start with smaller timesteps, increase if training is stable
+  total_timesteps: 100000  # Was 500000
+
+# Reward settings
+reward:
+  lambda_transport: 0.5
+  safety_classifier: null
+  probe_path: "./checkpoints/probes/latest/pytorch/"
+
+# Training settings
+training:
+  experiment_name: "aether_ppo"
+  
+  # More frequent logging due to smaller rollouts
+  log_interval: 5
+  save_interval: 5000
+  
+  # Early stopping
+  early_stopping:
+    enabled: true
+    patience: 20000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+# Weights & Biases logging
+wandb:
+  enabled: false  # Set to true if you have W&B account
+  project: "project-aether"
+  entity: null
+  tags:
+    - "phase2"
+    - "ppo"
+    - "steering"
+    - "rtx4050"
+

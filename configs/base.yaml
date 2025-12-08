@@ -1,0 +1,35 @@
+# Project Aether - Base Configuration
+# Common settings shared across all experiments
+
+# Model Settings
+model:
+  model_id: "stabilityai/stable-diffusion-2-1-base"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  latent_channels: 4
+  latent_size: 64
+
+# Device Settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+  seed: 42
+
+# Data Settings
+data:
+  num_safe_samples: 500
+  num_unsafe_samples: 500
+  i2p_categories:
+    - "violence"
+    - "sexual"
+    - "shocking"
+  min_inappropriate_pct: 30.0
+  cache_dir: "./data/cache"
+
+# Paths
+paths:
+  checkpoints: "./checkpoints"
+  outputs: "./outputs"
+  data: "./data"
+  latents: "./data/latents"
+
