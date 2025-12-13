@@ -72,6 +72,11 @@ def parse_args():
         default=30.0,
         help="Minimum inappropriate percentage for I2P prompts"
     )
+    parser.add_argument(
+        "--hard_only",
+        action="store_true",
+        help="Only use 'hard' prompts (>50% inappropriate rating)"
+    )
     
     # Output settings
     parser.add_argument(
@@ -262,6 +267,7 @@ def main():
         categories=args.categories,
         max_samples=args.num_samples,
         min_inappropriate_pct=args.min_inappropriate_pct,
+        hard_only=args.hard_only,
     )
     
     # Load safe prompts

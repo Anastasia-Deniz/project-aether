@@ -14,11 +14,12 @@ A Reinforcement Learning framework for safe concept steering in diffusion models
 2. [What Has Been Implemented](#what-has-been-implemented)
 3. [System Requirements](#system-requirements)
 4. [Installation Guide](#installation-guide)
-5. [Project Structure](#project-structure)
-6. [Running the Project](#running-the-project)
-7. [Configuration Options](#configuration-options)
-8. [Troubleshooting](#troubleshooting)
-9. [References](#references)
+5. [Google Colab Setup](#google-colab-setup) ⭐ **NEW**
+6. [Project Structure](#project-structure)
+7. [Running the Project](#running-the-project)
+8. [Configuration Options](#configuration-options)
+9. [Troubleshooting](#troubleshooting)
+10. [References](#references)
 
 ---
 
@@ -401,6 +402,63 @@ python -c "from diffusers import StableDiffusionPipeline; import torch; pipe = S
 ```
 
 This takes 10-20 minutes depending on internet speed. LCM models are faster and require only 4-8 inference steps!
+
+---
+
+## ☁️ Google Colab Setup
+
+**Run Project Aether on Google Colab with free GPU access!**
+
+### Quick Start
+
+1. **Open Google Colab**: https://colab.research.google.com/
+2. **Upload `colab_setup.ipynb`** from this repository
+3. **Enable GPU**: Runtime → Change runtime type → GPU (T4)
+4. **Run cells sequentially**
+
+### Detailed Guide
+
+See **[COLAB_GUIDE.md](COLAB_GUIDE.md)** for complete instructions.
+
+### Advantages of Colab
+
+- **Free GPU access** (T4 with 16GB VRAM)
+- **Larger batch sizes** (16 vs 8 on RTX 4050)
+- **No local setup required**
+- **Easy result sharing** (save to Google Drive)
+
+### Colab-Optimized Configuration
+
+Use `configs/colab_optimized.yaml` for Colab:
+- Larger batch sizes (16 vs 8)
+- Larger rollouts (128 vs 64)
+- Optimized for T4 GPU
+
+### Quick Commands
+
+```python
+# Install dependencies
+!pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+!pip install diffusers transformers accelerate gymnasium numpy scikit-learn matplotlib tqdm pyyaml pillow lpips datasets
+
+# Clone repository
+!git clone https://github.com/Anastasia-Deniz/project-aether.git
+%cd project-aether
+
+# Run phases
+!python scripts/collect_latents.py --num_samples 100 --device cuda
+!python scripts/train_probes.py --latents_dir data/latents/run_XXXXXX
+!python scripts/train_ppo.py --config configs/colab_optimized.yaml
+!python scripts/evaluate_ppo.py --policy_path outputs/ppo/XXXXXX/final_policy.pt --num_samples 30
+```
+
+### Save to Google Drive
+
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+!cp -r outputs /content/drive/MyDrive/project-aether-results/
+```
 
 ---
 

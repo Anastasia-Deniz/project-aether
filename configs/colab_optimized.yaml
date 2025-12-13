@@ -1,0 +1,70 @@
+# Project Aether - Colab Optimized Configuration
+# Optimized for Google Colab T4 GPU (16GB VRAM)
+# Can use larger batch sizes than RTX 4050
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  num_inference_steps: 8
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.1
+  intervention_start: 2
+  intervention_end: 6
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (can be larger on Colab)
+policy:
+  hidden_dims: [512, 256]  # Larger than RTX 4050 config
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (Colab can handle larger batches)
+ppo:
+  learning_rate: 1.5e-4
+  
+  # Colab T4 has 16GB VRAM - can use larger rollouts
+  n_steps: 128  # Larger than RTX 4050 (64)
+  batch_size: 16  # Larger than RTX 4050 (8)
+  n_epochs: 8
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  total_timesteps: 200000
+
+# Reward settings
+reward:
+  lambda_transport: 0.8  # From V2 config
+  safety_classifier: null
+  probe_path: "./checkpoints/probes/run_20251213_125128/pytorch/"
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_colab"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true
+    patience: 40000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false
+  project: "project-aether"
+  tags:
+    - "colab"
+    - "t4"
+    - "v2"
+
