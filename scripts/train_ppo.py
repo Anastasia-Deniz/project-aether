@@ -170,6 +170,14 @@ def load_config(config_path: str) -> dict:
     return config
 
 
+def truncate_prompt(prompt: str, max_words: int = 50) -> str:
+    """Truncate prompt to avoid CLIP's 77 token limit."""
+    words = prompt.split()
+    if len(words) > max_words:
+        return ' '.join(words[:max_words])
+    return prompt
+
+
 def get_prompts(num_prompts: int = 100, seed: int = 42) -> list:
     """Load prompts for training."""
     # Mix of safe and unsafe prompts
@@ -184,7 +192,7 @@ def get_prompts(num_prompts: int = 100, seed: int = 42) -> list:
         i2p = I2PDataset(data_config)
         unsafe_prompts = i2p.get_prompts(max_samples=num_prompts // 2)
     except Exception as e:
-        print(f"Warning: Could not load I2P dataset: {e}")
+        print(f"Warning: Could not load I2P dataset: {e}", flush=True)
         unsafe_prompts = []
     
     # Load safe prompts
@@ -194,17 +202,20 @@ def get_prompts(num_prompts: int = 100, seed: int = 42) -> list:
     )
     
     # Combine and extract just the prompt text
-    all_prompts = [p['prompt'] for p in safe_prompts]
+    # Truncate prompts to avoid CLIP's 77 token limit
+    all_prompts = [truncate_prompt(p['prompt']) for p in safe_prompts]
     if unsafe_prompts:
-        all_prompts.extend([p['prompt'] for p in unsafe_prompts])
+        all_prompts.extend([truncate_prompt(p['prompt']) for p in unsafe_prompts])
     
     np.random.seed(seed)
     np.random.shuffle(all_prompts)
     
+    print(f"Prompts truncated to max 50 words to avoid CLIP token limit", flush=True)
     return all_prompts
 
 
 def main():
+    import sys
     args = parse_args()
     
     # Load config from file if provided
@@ -219,10 +230,10 @@ def main():
     else:
         device = "cuda" if torch.cuda.is_available() else "cpu"
     
-    print(f"{'='*60}")
-    print("AETHER PPO TRAINING")
-    print(f"{'='*60}")
-    print(f"Device: {device}")
+    print(f"{'='*60}", flush=True)
+    print("AETHER PPO TRAINING", flush=True)
+    print(f"{'='*60}", flush=True)
+    print(f"Device: {device}", flush=True)
     
     # Quick test mode
     if args.quick:
@@ -247,22 +258,24 @@ def main():
         encoded_latent_dim=256,
     )
     
-    print(f"\nEnvironment config:")
-    print(f"  Model: {env_config.model_id}")
-    print(f"  Inference steps: {env_config.num_inference_steps}")
-    print(f"  Steering dim: {env_config.steering_dim}")
-    print(f"  Lambda transport: {env_config.lambda_transport}")
-    print(f"  Intervention window: [{env_config.intervention_start}, {env_config.intervention_end}]")
-    print(f"  Use latent encoder: {env_config.use_latent_encoder}")
-    print(f"  Observation dim: {env_config.observation_dim}")
+    print(f"\nEnvironment config:", flush=True)
+    print(f"  Model: {env_config.model_id}", flush=True)
+    print(f"  Inference steps: {env_config.num_inference_steps}", flush=True)
+    print(f"  Steering dim: {env_config.steering_dim}", flush=True)
+    print(f"  Lambda transport: {env_config.lambda_transport}", flush=True)
+    print(f"  Intervention window: [{env_config.intervention_start}, {env_config.intervention_end}]", flush=True)
+    print(f"  Use latent encoder: {env_config.use_latent_encoder}", flush=True)
+    print(f"  Observation dim: {env_config.observation_dim}", flush=True)
+    sys.stdout.flush()
     
     # Load prompts
-    print("\nLoading prompts...")
+    print("\nLoading prompts...", flush=True)
     prompts = get_prompts(num_prompts=100, seed=42)
-    print(f"Loaded {len(prompts)} prompts")
+    print(f"Loaded {len(prompts)} prompts", flush=True)
     
     # Create environment
-    print("\nCreating environment...")
+    print("\nCreating environment...", flush=True)
+    sys.stdout.flush()
     
     # For quick test without GPU, skip model loading
     if args.quick and device == "cpu":
@@ -279,8 +292,9 @@ def main():
             prompts=prompts,
         )
     
-    print(f"Observation space: {env.observation_space}")
-    print(f"Action space: {env.action_space}")
+    print(f"Observation space: {env.observation_space}", flush=True)
+    print(f"Action space: {env.action_space}", flush=True)
+    sys.stdout.flush()
     
     # PPO configuration
     ppo_config = PPOConfig(
@@ -299,11 +313,12 @@ def main():
         device=device,
     )
     
-    print(f"\nPPO config:")
-    print(f"  Total timesteps: {ppo_config.total_timesteps:,}")
-    print(f"  Steps per rollout: {ppo_config.n_steps}")
-    print(f"  Batch size: {ppo_config.batch_size}")
-    print(f"  Learning rate: {ppo_config.learning_rate}")
+    print(f"\nPPO config:", flush=True)
+    print(f"  Total timesteps: {ppo_config.total_timesteps:,}", flush=True)
+    print(f"  Steps per rollout: {ppo_config.n_steps}", flush=True)
+    print(f"  Batch size: {ppo_config.batch_size}", flush=True)
+    print(f"  Learning rate: {ppo_config.learning_rate}", flush=True)
+    sys.stdout.flush()
     
     # Probe path
     probe_path = file_config.get('reward', {}).get('probe_path', args.probe_path)
@@ -319,7 +334,8 @@ def main():
     )
     
     # Train
-    print(f"\nStarting training...")
+    print(f"\nStarting training...", flush=True)
+    sys.stdout.flush()
     history = trainer.train(total_timesteps=ppo_config.total_timesteps)
     
     # Plot training curves
@@ -355,8 +371,8 @@ def main():
     except Exception as e:
         print(f"Could not save plots: {e}")
     
-    print(f"\n✓ Training complete!")
-    print(f"Output: {trainer.run_dir}")
+    print(f"\n✓ Training complete!", flush=True)
+    print(f"Output: {trainer.run_dir}", flush=True)
     
     return trainer.run_dir
 

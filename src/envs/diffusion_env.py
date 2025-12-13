@@ -242,6 +242,22 @@ class DiffusionSteeringEnv(gym.Env):
         """Reset to a new episode with a prompt."""
         super().reset(seed=seed)
         
+        # MEMORY OPTIMIZATION: Clear previous episode data and CUDA cache
+        if self.current_latent is not None:
+            del self.current_latent
+        if self.trajectory:
+            del self.trajectory
+        if self.actions_taken:
+            del self.actions_taken
+        if self.prompt_embeds is not None:
+            del self.prompt_embeds
+        if self.negative_prompt_embeds is not None:
+            del self.negative_prompt_embeds
+        
+        # Clear CUDA cache to free memory
+        if self.device == "cuda":
+            torch.cuda.empty_cache()
+        
         # Get prompt from options or cycle through prompts
         if options and "prompt" in options:
             self.prompt = options["prompt"]
@@ -294,8 +310,8 @@ class DiffusionSteeringEnv(gym.Env):
         
         # Reset counters
         self.current_step = 0
-        self.trajectory = [self.current_latent.clone()]
-        self.actions_taken = []
+        self.trajectory = []  # MEMORY OPTIMIZATION: Don't store trajectory during training
+        self.actions_taken = []  # Now stores scalar norms, not tensors
         
         # Get initial observation
         obs = self._get_observation()
@@ -382,10 +398,15 @@ class DiffusionSteeringEnv(gym.Env):
             noise_pred, t, steered_latent, return_dict=False
         )[0]
         
-        # Track trajectory
-        self.trajectory.append(self.current_latent.clone())
+        # Track trajectory - MEMORY OPTIMIZATION: Only store if needed for analysis
+        # Skip trajectory storage during training to save VRAM
+        # self.trajectory.append(self.current_latent.clone())
+        
+        # Only store action norms for transport cost (not full tensors)
         if should_intervene:
-            self.actions_taken.append(delta_z.clone())
+            # Store just the squared norm, not the full tensor
+            action_norm_sq = delta_z.pow(2).sum().item()
+            self.actions_taken.append(action_norm_sq)
         
         # Advance step counter
         self.current_step += 1
@@ -400,10 +421,8 @@ class DiffusionSteeringEnv(gym.Env):
         # Get observation
         obs = self._get_observation()
         
-        # Compute transport cost so far
-        transport_cost = sum(
-            a.pow(2).sum().item() for a in self.actions_taken
-        ) if self.actions_taken else 0.0
+        # Compute transport cost so far (actions_taken now stores scalar norms)
+        transport_cost = sum(self.actions_taken) if self.actions_taken else 0.0
         
         info = {
             "timestep": 1.0 - (self.current_step / self.config.num_inference_steps),
@@ -419,22 +438,32 @@ class DiffusionSteeringEnv(gym.Env):
         # Get latent representation
         z_flat = self.current_latent.flatten().float()
         
+        # Normalize latent to prevent numerical issues (zero mean, unit variance)
+        z_mean = z_flat.mean()
+        z_std = z_flat.std() + 1e-8  # Prevent division by zero
+        z_normalized = (z_flat - z_mean) / z_std
+        
         # Encode latent if encoder is available (reduces from 16K to 256 dims)
         if self.latent_encoder is not None:
             with torch.no_grad():
-                z_encoded = self.latent_encoder(z_flat.unsqueeze(0).to(self.device))
+                z_encoded = self.latent_encoder(z_normalized.unsqueeze(0).to(self.device))
                 z_obs = z_encoded.squeeze(0).cpu().numpy()
         else:
-            z_obs = z_flat.cpu().numpy()
+            z_obs = z_normalized.cpu().numpy()
+        
+        # Clamp to prevent extreme values and replace NaN with 0
+        z_obs = np.clip(z_obs, -10.0, 10.0)
+        z_obs = np.nan_to_num(z_obs, nan=0.0, posinf=10.0, neginf=-10.0)
         
         # Normalized timestep
         t = np.array([1.0 - (self.current_step / self.config.num_inference_steps)])
         
-        # Safety score from linear probe
+        # Safety score from linear probe (use original unnormalized latent for probe)
         if self.linear_probe is not None:
             with torch.no_grad():
                 score = self.linear_probe(z_flat.unsqueeze(0).to(self.device))
                 score = torch.sigmoid(score).cpu().numpy().flatten()
+                score = np.nan_to_num(score, nan=0.5)  # Default to neutral if NaN
         else:
             score = np.array([0.5])  # Neutral if no probe
         
@@ -471,12 +500,8 @@ class DiffusionSteeringEnv(gym.Env):
                 r_safe = 0.0  # No classifier, neutral reward
         
         # Transport cost (Wasserstein-inspired: Σ||Δz_t||²)
-        if self.actions_taken:
-            transport_cost = sum(
-                a.pow(2).sum().item() for a in self.actions_taken
-            )
-        else:
-            transport_cost = 0.0
+        # actions_taken now stores scalar norms directly
+        transport_cost = sum(self.actions_taken) if self.actions_taken else 0.0
         
         # Final reward: R_safe - λ * W2_cost
         reward = r_safe - self.config.lambda_transport * transport_cost

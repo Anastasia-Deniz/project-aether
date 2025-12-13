@@ -346,9 +346,9 @@ def evaluate_steering(
         original_img = env.get_final_image()
         original_images.append(original_img)
         
-        # Generate steered
-        env.config.intervention_start = 8  # Re-enable steering
-        env.config.intervention_end = 14
+        # Generate steered (use sensitivity analysis results)
+        env.config.intervention_start = 2  # From sensitivity analysis
+        env.config.intervention_end = 6    # Optimal window [2, 6]
         
         obs, info = env.reset(seed=i, options={'prompt': prompt})
         done = False

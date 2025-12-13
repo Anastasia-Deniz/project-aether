@@ -41,17 +41,17 @@ policy:
   activation: "relu"
   latent_encoder_dim: 256
 
-# PPO hyperparameters (memory optimized for RTX 4050)
+# PPO hyperparameters (AGGRESSIVE memory optimization for RTX 4050 6GB)
 ppo:
   learning_rate: 3.0e-4
   
-  # REDUCED rollout steps for memory
-  n_steps: 512  # Was 2048
+  # AGGRESSIVELY REDUCED rollout steps for 6GB VRAM
+  n_steps: 64  # Was 512, reduced to prevent OOM
   
-  # REDUCED batch size for memory  
-  batch_size: 32  # Was 64
+  # AGGRESSIVELY REDUCED batch size for 6GB VRAM
+  batch_size: 8  # Was 32, reduced to prevent OOM
   
-  n_epochs: 10
+  n_epochs: 4  # Reduced from 10 to compensate for smaller batches
   gamma: 0.99
   gae_lambda: 0.95
   clip_range: 0.2
@@ -60,15 +60,14 @@ ppo:
   max_grad_norm: 0.5
   
   # Start with smaller timesteps, increase if training is stable
-  total_timesteps: 100000  # Was 500000
+  total_timesteps: 50000  # Reduced for faster iteration
 
 # Reward settings
 reward:
   lambda_transport: 0.5
   safety_classifier: null
-  # Update this path after running train_probes.py
-  # Example: ./checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/
-  probe_path: null
+  # Path to trained probes from Phase 1
+  probe_path: "./checkpoints/probes/run_20251213_125128/pytorch/"
 
 # Training settings
 training:

@@ -132,13 +132,29 @@ class ActorCritic(nn.Module):
         nn.init.orthogonal_(self.critic.weight, gain=1.0)
         nn.init.zeros_(self.critic.bias)
     
-    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, obs: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Forward pass returning action distribution params and value."""
+        # Clamp observations to prevent extreme values
+        obs = torch.clamp(obs, -10.0, 10.0)
+        obs = torch.nan_to_num(obs, nan=0.0, posinf=10.0, neginf=-10.0)
+        
         features = self.shared(obs)
         
+        # Clamp features for numerical stability
+        features = torch.clamp(features, -10.0, 10.0)
+        features = torch.nan_to_num(features, nan=0.0, posinf=10.0, neginf=-10.0)
+        
         action_mean = self.actor_mean(features)
-        action_std = self.actor_log_std.exp().expand_as(action_mean)
+        # Clamp action_mean to prevent extreme values
+        action_mean = torch.clamp(action_mean, -5.0, 5.0)
+        action_mean = torch.nan_to_num(action_mean, nan=0.0, posinf=5.0, neginf=-5.0)
+        
+        # Ensure log_std is bounded and std is always positive with minimum value
+        log_std_clamped = torch.clamp(self.actor_log_std, -5.0, 2.0)  # exp(-5)≈0.007, exp(2)≈7.4
+        action_std = log_std_clamped.exp().expand_as(action_mean)
+        
         value = self.critic(features)
+        value = torch.nan_to_num(value, nan=0.0, posinf=10.0, neginf=-10.0)
         
         return action_mean, action_std, value
     
@@ -161,7 +177,11 @@ class ActorCritic(nn.Module):
         else:
             dist = Normal(action_mean, action_std)
             action = dist.sample()
+            # Clamp sampled action
+            action = torch.clamp(action, -1.0, 1.0)
             log_prob = dist.log_prob(action).sum(dim=-1)
+            # Handle NaN in log_prob
+            log_prob = torch.nan_to_num(log_prob, nan=0.0, posinf=0.0, neginf=-100.0)
         
         return action, log_prob, value.squeeze(-1)
     
@@ -178,9 +198,16 @@ class ActorCritic(nn.Module):
         """
         action_mean, action_std, value = self.forward(obs)
         
+        # Clamp actions for numerical stability
+        actions = torch.clamp(actions, -1.0, 1.0)
+        
         dist = Normal(action_mean, action_std)
         log_prob = dist.log_prob(actions).sum(dim=-1)
         entropy = dist.entropy().sum(dim=-1)
+        
+        # Handle NaN values
+        log_prob = torch.nan_to_num(log_prob, nan=0.0, posinf=0.0, neginf=-100.0)
+        entropy = torch.nan_to_num(entropy, nan=0.0, posinf=10.0, neginf=0.0)
         
         return log_prob, value.squeeze(-1), entropy
 
@@ -378,7 +405,7 @@ class AetherPPOTrainer:
         print(f"Loading probe: {probe_file}")
         
         probe = LinearProbe(input_dim=self.env.config.latent_dim)
-        probe.load_state_dict(torch.load(probe_file))
+        probe.load_state_dict(torch.load(probe_file, map_location=self.device))
         probe = probe.to(self.device)
         probe.eval()
         
@@ -410,7 +437,9 @@ class AetherPPOTrainer:
         episode_length = 0
         
         for _ in range(self.config.n_steps):
-            # Get action from policy
+            # Get action from policy - ensure observation is clean
+            obs = np.nan_to_num(obs, nan=0.0, posinf=10.0, neginf=-10.0)
+            obs = np.clip(obs, -10.0, 10.0)
             obs_tensor = torch.FloatTensor(obs).unsqueeze(0).to(self.device)
             
             with torch.no_grad():
@@ -420,12 +449,21 @@ class AetherPPOTrainer:
             log_prob_np = log_prob.cpu().numpy().item()
             value_np = value.cpu().numpy().item()
             
+            # Handle NaN values
+            action_np = np.nan_to_num(action_np, nan=0.0)
+            log_prob_np = float(np.nan_to_num(log_prob_np, nan=0.0))
+            value_np = float(np.nan_to_num(value_np, nan=0.0))
+            
             # Clip action to valid range
             action_np = np.clip(action_np, -1.0, 1.0)
             
             # Step environment
             next_obs, reward, terminated, truncated, info = self.env.step(action_np)
             done = terminated or truncated
+            
+            # Handle NaN reward
+            reward = float(np.nan_to_num(reward, nan=0.0, posinf=1.0, neginf=-1.0))
+            reward = np.clip(reward, -10.0, 10.0)  # Clip extreme rewards
             
             # Store transition
             self.buffer.add(
@@ -578,8 +616,16 @@ class AetherPPOTrainer:
             # Collect rollouts
             rollout_stats = self.collect_rollouts()
             
+            # MEMORY OPTIMIZATION: Clear CUDA cache after rollouts
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
+            
             # Update policy
             update_stats = self.update_policy()
+            
+            # MEMORY OPTIMIZATION: Clear CUDA cache after update
+            if self.device == "cuda":
+                torch.cuda.empty_cache()
             
             # Record history
             history['rewards'].append(rollout_stats['mean_reward'])
@@ -605,9 +651,9 @@ class AetherPPOTrainer:
         self.save_checkpoint("final_policy.pt")
         self._save_history(history)
         
-        print(f"\n{'='*60}")
-        print("✓ TRAINING COMPLETE")
-        print(f"{'='*60}")
+        print(f"\n{'='*60}", flush=True)
+        print("[SUCCESS] TRAINING COMPLETE", flush=True)
+        print(f"{'='*60}", flush=True)
         print(f"Final mean reward: {np.mean(history['rewards'][-10:]):.4f}")
         print(f"Output: {self.run_dir}")
         
