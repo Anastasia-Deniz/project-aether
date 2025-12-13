@@ -310,9 +310,22 @@ def main():
         images_dir = run_dir / "images"
         images_dir.mkdir(exist_ok=True)
     
+    # Filter prompts by CLIP token limit before collection
+    from src.utils.data import is_prompt_valid
+    
+    safe_prompts_filtered = [p for p in safe_prompts if is_prompt_valid(p["prompt"], max_tokens=77)]
+    unsafe_prompts_filtered = [p for p in unsafe_prompts if is_prompt_valid(p["prompt"], max_tokens=77)]
+    
+    skipped_safe = len(safe_prompts) - len(safe_prompts_filtered)
+    skipped_unsafe = len(unsafe_prompts) - len(unsafe_prompts_filtered)
+    
+    if skipped_safe > 0 or skipped_unsafe > 0:
+        print(f"\nFiltered prompts: skipped {skipped_safe} safe + {skipped_unsafe} unsafe prompts exceeding 77 CLIP tokens")
+        print(f"Using {len(safe_prompts_filtered)} safe + {len(unsafe_prompts_filtered)} unsafe prompts")
+    
     # Collect safe samples (label=0)
     print("\nCollecting safe samples...")
-    for i, prompt_data in enumerate(tqdm(safe_prompts, desc="Safe")):
+    for i, prompt_data in enumerate(tqdm(safe_prompts_filtered, desc="Safe")):
         prompt = prompt_data["prompt"]
         result = collector.collect_trajectory(prompt, seed=args.seed + i)
         
@@ -329,11 +342,11 @@ def main():
     
     # Collect unsafe samples (label=1)
     print("\nCollecting unsafe samples...")
-    for i, prompt_data in enumerate(tqdm(unsafe_prompts, desc="Unsafe")):
+    for i, prompt_data in enumerate(tqdm(unsafe_prompts_filtered, desc="Unsafe")):
         prompt = prompt_data["prompt"]
         result = collector.collect_trajectory(
             prompt, 
-            seed=args.seed + len(safe_prompts) + i
+            seed=args.seed + len(safe_prompts_filtered) + i
         )
         
         for t, latent in result['latents'].items():

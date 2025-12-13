@@ -98,7 +98,22 @@ print(f"Using: {latest_latents}")
 
 ```python
 # Use Colab-optimized config (larger batches)
+# Config uses probe_path: "auto" to automatically find latest probe
 !python scripts/train_ppo.py --config configs/colab_optimized.yaml
+```
+
+**Or manually specify probe path:**
+```python
+import os
+from pathlib import Path
+
+# Find latest probe
+probe_dirs = sorted(Path('checkpoints/probes').glob('run_*'), key=os.path.getmtime)
+latest_probe = probe_dirs[-1] / 'pytorch'
+
+!python scripts/train_ppo.py \
+    --config configs/colab_optimized.yaml \
+    --probe_path {latest_probe}
 ```
 
 **Or use V2 config:**
@@ -118,14 +133,19 @@ from pathlib import Path
 ppo_dirs = sorted(Path('outputs/ppo').glob('aether_ppo_*'), key=os.path.getmtime)
 latest_policy = ppo_dirs[-1] / 'final_policy.pt'
 
-if latest_policy.exists():
+# Find latest probe
+probe_dirs = sorted(Path('checkpoints/probes').glob('run_*'), key=os.path.getmtime)
+latest_probe = probe_dirs[-1] / 'pytorch'
+
+if latest_policy.exists() and latest_probe.exists():
     !python scripts/evaluate_ppo.py \
         --policy_path {latest_policy} \
-        --probe_path checkpoints/probes/run_20251213_125128/pytorch/ \
+        --probe_path {latest_probe} \
         --num_samples 30 \
         --device cuda
 else:
-    print("Policy not found. Training may still be running.")
+    print(f"Policy exists: {latest_policy.exists()}")
+    print(f"Probe exists: {latest_probe.exists()}")
 ```
 
 ---

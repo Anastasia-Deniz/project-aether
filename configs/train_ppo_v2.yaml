@@ -51,7 +51,7 @@ reward:
   lambda_transport: 0.8  # Increased from 0.3 to 0.8 (strong penalty for large actions)
   
   safety_classifier: null
-  probe_path: "./checkpoints/probes/run_20251213_125128/pytorch/"
+  probe_path: "auto"  # Auto-detect latest probe, or set to specific path
 
 # Training settings
 training:

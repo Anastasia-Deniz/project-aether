@@ -14,6 +14,44 @@ import numpy as np
 from datasets import load_dataset
 from tqdm import tqdm
 
+# CLIP tokenizer for checking prompt length
+try:
+    from transformers import CLIPTokenizer
+    _clip_tokenizer = None
+    
+    def get_clip_tokenizer():
+        """Lazy load CLIP tokenizer."""
+        global _clip_tokenizer
+        if _clip_tokenizer is None:
+            _clip_tokenizer = CLIPTokenizer.from_pretrained(
+                "openai/clip-vit-large-patch14",
+                cache_dir="./data/cache"
+            )
+        return _clip_tokenizer
+    
+    def count_clip_tokens(prompt: str) -> int:
+        """Count CLIP tokens in a prompt (max 77)."""
+        try:
+            tokenizer = get_clip_tokenizer()
+            tokens = tokenizer(prompt, truncation=False, return_tensors="pt")
+            return tokens.input_ids.shape[1]
+        except Exception:
+            # Fallback: estimate ~1.3 tokens per word
+            return int(len(prompt.split()) * 1.3)
+    
+    def is_prompt_valid(prompt: str, max_tokens: int = 77) -> bool:
+        """Check if prompt fits within CLIP token limit."""
+        return count_clip_tokens(prompt) <= max_tokens
+except ImportError:
+    # Fallback if transformers not available
+    def count_clip_tokens(prompt: str) -> int:
+        """Estimate tokens: ~1.3 tokens per word."""
+        return int(len(prompt.split()) * 1.3)
+    
+    def is_prompt_valid(prompt: str, max_tokens: int = 77) -> bool:
+        """Check if prompt fits within CLIP token limit (estimated)."""
+        return count_clip_tokens(prompt) <= max_tokens
+
 
 @dataclass
 class DataConfig:
@@ -79,6 +117,7 @@ class I2PDataset:
         max_samples = max_samples or self.config.num_unsafe_samples
         
         filtered = []
+        skipped_long = 0
         for item in self._dataset:
             # Check category filter
             item_cats = item["categories"].lower()
@@ -93,6 +132,11 @@ class I2PDataset:
             # Check inappropriate percentage
             if item["inappropriate_percentage"] < min_inappropriate_pct:
                 continue
+            
+            # Check CLIP token limit (skip instead of truncate)
+            if not is_prompt_valid(item["prompt"], max_tokens=77):
+                skipped_long += 1
+                continue
                 
             filtered.append({
                 "prompt": item["prompt"],
@@ -102,13 +146,20 @@ class I2PDataset:
                 "is_hard": item["hard"] == 1,
                 "label": 1,  # Unsafe
             })
+            
+            # Stop when we have enough (with some buffer for filtering)
+            if len(filtered) >= max_samples * 2:
+                break
         
         # Shuffle and limit
         random.seed(self.config.random_seed)
         random.shuffle(filtered)
         
         result = filtered[:max_samples]
-        print(f"Selected {len(result)} unsafe prompts from I2P")
+        if skipped_long > 0:
+            print(f"Selected {len(result)} unsafe prompts from I2P (skipped {skipped_long} prompts exceeding 77 CLIP tokens)")
+        else:
+            print(f"Selected {len(result)} unsafe prompts from I2P")
         return result
     
     def get_category_distribution(self) -> Dict[str, int]:
@@ -190,6 +241,10 @@ class COCOCaptions:
                 # Length filter
                 if len(caption) < min_length or len(caption) > max_length:
                     continue
+                
+                # Check CLIP token limit (skip instead of truncate)
+                if not is_prompt_valid(caption, max_tokens=77):
+                    continue
                     
                 seen_prompts.add(caption)
                 filtered.append({
@@ -209,6 +264,8 @@ class COCOCaptions:
         random.shuffle(filtered)
         
         result = filtered[:max_samples]
+        if len(result) < max_samples:
+            print(f"Warning: Only found {len(result)} valid safe prompts (requested {max_samples})")
         print(f"Selected {len(result)} safe prompts from MS-COCO")
         return result
 
@@ -464,39 +521,48 @@ class AlternativeSafePrompts:
         """
         random.seed(seed)
         
-        # Start with base prompts
+        # Start with base prompts (filter by CLIP tokens)
         augmented = []
         for prompt in cls.SAFE_PROMPTS:
-            augmented.append({
-                "prompt": prompt, 
-                "categories": "safe", 
-                "label": 0,
-                "augmented": False,
-            })
+            if is_prompt_valid(prompt, max_tokens=77):
+                augmented.append({
+                    "prompt": prompt, 
+                    "categories": "safe", 
+                    "label": 0,
+                    "augmented": False,
+                })
         
         # Add augmented versions if we need more samples
-        if num_samples > len(cls.SAFE_PROMPTS):
+        if num_samples > len(augmented):
             for prompt in cls.SAFE_PROMPTS:
                 # Style prefix augmentation
                 for mod in random.sample(cls.STYLE_MODIFIERS, min(3, len(cls.STYLE_MODIFIERS))):
-                    augmented.append({
-                        "prompt": f"{mod} {prompt}",
-                        "categories": "safe",
+                    augmented_prompt = f"{mod} {prompt}"
+                    # Check CLIP token limit for augmented prompts
+                    if is_prompt_valid(augmented_prompt, max_tokens=77):
+                        augmented.append({
+                            "prompt": augmented_prompt,
+                            "categories": "safe",
                         "label": 0,
                         "augmented": True,
                     })
                 
                 # Quality suffix augmentation
                 quality = random.choice(cls.QUALITY_MODIFIERS)
-                augmented.append({
-                    "prompt": f"{prompt}, {quality}",
-                    "categories": "safe", 
-                    "label": 0,
-                    "augmented": True,
-                })
+                quality_prompt = f"{prompt}, {quality}"
+                # Check CLIP token limit for quality-augmented prompts
+                if is_prompt_valid(quality_prompt, max_tokens=77):
+                    augmented.append({
+                        "prompt": quality_prompt,
+                        "categories": "safe", 
+                        "label": 0,
+                        "augmented": True,
+                    })
         
         random.shuffle(augmented)
         result = augmented[:num_samples]
+        if len(result) < num_samples:
+            print(f"Warning: Only found {len(result)} valid safe prompts (requested {num_samples}) after CLIP token filtering")
         print(f"Selected {len(result)} safe prompts ({sum(1 for p in result if not p.get('augmented', False))} base, {sum(1 for p in result if p.get('augmented', False))} augmented)")
         return result
     

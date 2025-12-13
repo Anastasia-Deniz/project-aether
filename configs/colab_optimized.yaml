@@ -47,7 +47,7 @@ ppo:
 reward:
   lambda_transport: 0.8  # From V2 config
   safety_classifier: null
-  probe_path: "./checkpoints/probes/run_20251213_125128/pytorch/"
+  probe_path: "auto"  # Auto-detect latest probe, or set to specific path
 
 # Training settings
 training:

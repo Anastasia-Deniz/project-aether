@@ -320,8 +320,24 @@ def main():
     print(f"  Learning rate: {ppo_config.learning_rate}", flush=True)
     sys.stdout.flush()
     
-    # Probe path
+    # Probe path - auto-detect if not provided or path doesn't exist
     probe_path = file_config.get('reward', {}).get('probe_path', args.probe_path)
+    
+    # Auto-detect latest probe if path is None, empty, or doesn't exist
+    if not probe_path or probe_path == "auto" or (probe_path and not Path(probe_path).exists()):
+        print("Auto-detecting latest probe...")
+        probe_dirs = sorted(Path("checkpoints/probes").glob("run_*"), key=lambda p: p.stat().st_mtime if p.exists() else 0)
+        if probe_dirs:
+            latest_probe_dir = probe_dirs[-1] / "pytorch"
+            if latest_probe_dir.exists():
+                probe_path = str(latest_probe_dir)
+                print(f"Found latest probe: {probe_path}")
+            else:
+                print(f"Warning: Probe directory {latest_probe_dir} not found. Training without probe.")
+                probe_path = None
+        else:
+            print("Warning: No probe directories found. Training without probe.")
+            probe_path = None
     
     # Create trainer
     trainer = AetherPPOTrainer(
