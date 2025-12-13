@@ -2,8 +2,8 @@
 # Phase 2: Train the steering policy
 # Optimized for RTX 4050 (6GB VRAM)
 
-# Inherit from base
-_base_: "base.yaml"
+# Note: YAML doesn't support inheritance natively
+# All settings should be explicitly defined here
 
 # Compute settings
 compute:
@@ -12,10 +12,11 @@ compute:
 
 # Environment settings
 env:
-  # Using v1.5 (no HuggingFace auth required)
-  model_id: "runwayml/stable-diffusion-v1-5"
-  # REDUCED from 20 to 15 steps for RTX 4050
-  num_inference_steps: 15
+  # Using LCM (Latent Consistency Model) for faster inference
+  # LCM requires only 4-8 steps instead of 15-50
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  # LCM works well with 4-8 steps - much faster than standard SD!
+  num_inference_steps: 8
   guidance_scale: 7.5
   
   # Low-rank steering dimension
@@ -24,10 +25,10 @@ env:
   # Action constraints
   max_action_norm: 0.1
   
-  # Intervention window (adjusted for 15 steps)
+  # Intervention window (adjusted for 8 steps with LCM)
   # Update these after running Phase 1 sensitivity analysis
-  intervention_start: 6
-  intervention_end: 11
+  intervention_start: 2
+  intervention_end: 6
   
   # Latent encoder for reduced observation space
   use_latent_encoder: true
@@ -65,7 +66,9 @@ ppo:
 reward:
   lambda_transport: 0.5
   safety_classifier: null
-  probe_path: "./checkpoints/probes/latest/pytorch/"
+  # Update this path after running train_probes.py
+  # Example: ./checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/
+  probe_path: null
 
 # Training settings
 training:

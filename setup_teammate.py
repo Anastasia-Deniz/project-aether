@@ -214,7 +214,7 @@ def download_model():
         
         print("  Loading model (may take 15-30 minutes)...")
         pipe = StableDiffusionPipeline.from_pretrained(
-            "runwayml/stable-diffusion-v1-5",
+            "rupeshs/LCM-runwayml-stable-diffusion-v1-5",
             torch_dtype=torch.float16,
             safety_checker=None,
         )
@@ -223,7 +223,7 @@ def download_model():
     except Exception as e:
         print_fail(f"Model download failed: {e}")
         print("  You can download later by running:")
-        print("  python -c \"from diffusers import StableDiffusionPipeline; StableDiffusionPipeline.from_pretrained('runwayml/stable-diffusion-v1-5')\"")
+        print("  python -c \"from diffusers import StableDiffusionPipeline; StableDiffusionPipeline.from_pretrained('rupeshs/LCM-runwayml-stable-diffusion-v1-5')\"")
         return False
 
 def main():

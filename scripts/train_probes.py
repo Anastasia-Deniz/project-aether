@@ -20,6 +20,8 @@ from pathlib import Path
 from datetime import datetime
 
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')  # Use non-interactive backend (no GUI needed)
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
@@ -86,7 +88,7 @@ def load_latents(latents_dir: Path) -> dict:
     if not files:
         raise FileNotFoundError(f"No timestep files found in {latents_dir}")
     
-    print(f"Found {len(files)} timestep files")
+    print(f"Found {len(files)} timestep files", flush=True)
     
     for f in files:
         t = int(f.stem.split("_")[1])
@@ -309,9 +311,10 @@ def plot_results(results: dict, sensitivity: dict, output_path: Path):
     plt.tight_layout()
     plt.savefig(output_path / "probe_analysis.png", dpi=150, bbox_inches='tight')
     plt.savefig(output_path / "probe_analysis.pdf", bbox_inches='tight')
-    print(f"Saved plots to {output_path}")
+    print(f"Saved plots to {output_path}", flush=True)
     
-    plt.show()
+    # Don't call plt.show() - just save the figures
+    plt.close(fig)
     
     return fig
 
@@ -330,6 +333,7 @@ def save_pytorch_probes(results: dict, output_dir: Path, latent_dim: int):
 
 
 def main():
+    import sys
     args = parse_args()
     
     # Set seed
@@ -341,14 +345,14 @@ def main():
     run_dir = output_dir / f"run_{timestamp}"
     run_dir.mkdir(parents=True, exist_ok=True)
     
-    print("="*60)
-    print("LINEAR PROBE TRAINING")
-    print("="*60)
-    print(f"Latents: {args.latents_dir}")
-    print(f"Output: {run_dir}")
+    print("="*60, flush=True)
+    print("LINEAR PROBE TRAINING", flush=True)
+    print("="*60, flush=True)
+    print(f"Latents: {args.latents_dir}", flush=True)
+    print(f"Output: {run_dir}", flush=True)
     
     # Load latents
-    print("\n--- Loading Latents ---")
+    print("\n--- Loading Latents ---", flush=True)
     data = load_latents(args.latents_dir)
     
     num_steps = max(data.keys())
@@ -356,13 +360,13 @@ def main():
     latent_dim = sample_X.shape[1]
     num_samples = sample_X.shape[0]
     
-    print(f"Timesteps: 0 to {num_steps}")
-    print(f"Latent dimension: {latent_dim}")
-    print(f"Total samples: {num_samples}")
-    print(f"Label distribution: {np.bincount(data[0]['y'])}")
+    print(f"Timesteps: 0 to {num_steps}", flush=True)
+    print(f"Latent dimension: {latent_dim}", flush=True)
+    print(f"Total samples: {num_samples}", flush=True)
+    print(f"Label distribution: {np.bincount(data[0]['y'])}", flush=True)
     
     # Train probes at each timestep
-    print("\n--- Training Probes ---")
+    print("\n--- Training Probes ---", flush=True)
     results = {}
     
     for t in tqdm(sorted(data.keys()), desc="Training probes"):
@@ -375,10 +379,10 @@ def main():
         )
     
     # Print accuracy summary
-    print("\n--- Probe Accuracies ---")
+    print("\n--- Probe Accuracies ---", flush=True)
     for t in sorted(results.keys()):
         r = results[t]
-        print(f"  t={t:2d}: Train={r['train_acc']:.3f}, Test={r['test_acc']:.3f}, AUC={r['auc']:.3f}")
+        print(f"  t={t:2d}: Train={r['train_acc']:.3f}, Test={r['test_acc']:.3f}, AUC={r['auc']:.3f}", flush=True)
     
     # Compute sensitivity scores
     print("\n--- Computing Sensitivity Scores ---")

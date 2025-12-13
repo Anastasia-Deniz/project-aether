@@ -29,15 +29,16 @@ Generative models often reproduce undesired or unsafe concepts due to limited co
 
 ### Key Contributions
 - **Unified ODE framework** for diffusion and flow-matching models
-- **Linear probing** for concept detection in latent space
+- **Linear probing** for concept detection in latent space (90% accuracy achieved!)
 - **Layer sensitivity analysis** to identify optimal intervention points
 - **Optimal transport reward** combining safety and semantic alignment
+- **LCM integration** for 3x faster inference (8 steps vs 20+)
 - **Evaluation framework** with SSR, LPIPS, and transport cost metrics
 
 ### Three-Phase Approach
 | Phase | Status | Description |
 |-------|--------|-------------|
-| **Phase 1: The Probe** | ✅ Latent Collection Done | Train linear classifiers to detect unsafe concepts |
+| **Phase 1: The Probe** | ✅ **COMPLETE** | Linear probes trained with 90% accuracy |
 | **Phase 2: Policy Training** | ⏳ Pending | Train PPO policy to steer latents toward safe generations |
 | **Phase 3: Evaluation** | ⏳ Pending | Benchmark against baselines using SSR, LPIPS, and transport cost |
 
@@ -45,31 +46,63 @@ Generative models often reproduce undesired or unsafe concepts due to limited co
 
 ## 🏁 Current Progress
 
-### ✅ Phase 1.1: Latent Collection - COMPLETED (Dec 8, 2025)
+### ✅ Phase 1: Linear Probing - COMPLETE (Dec 13, 2025)
 
-Successfully collected latent representations for training probes:
+**Using LCM (Latent Consistency Model) for fast inference!**
+
+#### Phase 1.1: Latent Collection ✅
 
 ```
-Output: data/latents/run_20251208_224020/
+Model: rupeshs/LCM-runwayml-stable-diffusion-v1-5
+Output: data/latents/run_20251213_124105/
 ├── latents/
-│   ├── timestep_00.npz through timestep_16.npz
+│   ├── timestep_00.npz through timestep_08.npz
 │   └── (100 samples × 16,384 dimensions each)
 ├── safe_prompts.json      (50 safe prompts)
 ├── unsafe_prompts.json    (50 unsafe prompts from I2P)
 └── metadata.json
 ```
 
-**Statistics:**
+**Collection Statistics:**
+- **Model:** LCM (Latent Consistency Model) - 3x faster than standard SD
 - **Safe samples:** 50 (curated prompts: nature, animals, food, architecture)
-- **Unsafe samples:** 50 (from I2P dataset: violence, hate, sexual content)
-- **Timesteps:** 17 (0-16, covering full diffusion trajectory)
+- **Unsafe samples:** 50 (from I2P dataset: violence, sexual, shocking)
+- **Timesteps:** 9 (0-8, using LCM's efficient 8-step generation)
 - **Latent dimension:** 16,384 (64×64×4 flattened)
-- **Collection time:** ~4 minutes on RTX 4050
+- **Collection time:** ~2 minutes on RTX 4050
 
-### ⏳ Next Steps
-1. **Train Linear Probes** - Run `scripts/train_probes.py`
-2. **Sensitivity Analysis** - Run `scripts/run_sensitivity.py`
-3. **PPO Training** - Run `scripts/train_ppo.py`
+#### Phase 1.2: Linear Probe Training ✅
+
+```
+Output: checkpoints/probes/run_20251213_125128/
+├── probe_metrics.json         # Accuracy at each timestep
+├── sensitivity_scores.json    # Layer sensitivity analysis
+├── probe_analysis.png         # Visualization
+└── pytorch/
+    └── probe_t00.pt ... probe_t08.pt  # Trained probes
+```
+
+**Probe Results (Concepts ARE Linearly Separable!):**
+
+| Timestep | Test Accuracy | AUC | Assessment |
+|----------|---------------|-----|------------|
+| t=0 | 55% | 0.48 | ❌ Noise |
+| t=1 | **85%** | **0.97** | ✅ Excellent |
+| t=2 | **90%** | 0.95 | ✅ **Best** |
+| t=3 | **90%** | 0.95 | ✅ **Best** |
+| t=4 | **85%** | 0.90 | ✅ Optimal |
+| t=5 | 75% | 0.90 | ✅ Good |
+| t=6 | 75% | 0.89 | ✅ Good |
+| t=7 | 70% | 0.85 | ⚠️ Fair |
+| t=8 | 70% | 0.82 | ⚠️ Fair |
+
+**Layer Sensitivity Analysis:**
+- **Optimal Timestep:** t=4 (sensitivity score: 0.72)
+- **Recommended Intervention Window:** [2, 6]
+- **Top 5 Timesteps:** [4, 3, 5, 2, 6]
+
+### ⏳ Next Step
+**Phase 2: PPO Training** - Run `scripts/train_ppo.py`
 
 ---
 
@@ -79,12 +112,18 @@ Output: data/latents/run_20251208_224020/
 
 | Component | File | Description |
 |-----------|------|-------------|
-| **Diffusion Environment** | `src/envs/diffusion_env.py` | Gymnasium environment wrapping Stable Diffusion ODE |
+| **Diffusion Environment** | `src/envs/diffusion_env.py` | Gymnasium environment wrapping LCM/Stable Diffusion ODE |
 | **Latent Encoder** | `src/envs/diffusion_env.py` | Reduces observation space from 16,384 → 256 dimensions |
 | **Linear Probe** | `src/models/linear_probe.py` | Concept detection probes for each timestep |
 | **PPO Trainer** | `src/training/ppo_trainer.py` | Complete PPO implementation with ActorCritic network |
 | **Evaluation Metrics** | `src/evaluation/metrics.py` | SSR, FPR, LPIPS, Transport Cost metrics |
 | **Data Utilities** | `src/utils/data.py` | I2P dataset loader + 200 curated safe prompts |
+
+### Model
+- **Base Model:** [rupeshs/LCM-runwayml-stable-diffusion-v1-5](https://huggingface.co/rupeshs/LCM-runwayml-stable-diffusion-v1-5)
+- **Type:** Latent Consistency Model (LCM)
+- **Advantage:** Only 4-8 inference steps needed (vs 20-50 for standard SD)
+- **License:** OpenRAIL
 
 ### Scripts
 
@@ -137,7 +176,7 @@ Output: data/latents/run_20251208_224020/
 ### Step 1: Clone the Repository
 
 ```bash
-git clone <repository-url>](https://github.com/Anastasia-Deniz/project-aether.git)
+git clone https://github.com/Anastasia-Deniz/project-aether.git
 cd project-aether
 ```
 
@@ -197,13 +236,13 @@ python scripts/test_setup.py
 
 ### Step 6: Download the Model (First Time Only)
 
-The Stable Diffusion model (~4GB) will be downloaded automatically on first run. To pre-download:
+The LCM (Latent Consistency Model) will be downloaded automatically on first run. To pre-download:
 
 ```bash
-python -c "from diffusers import StableDiffusionPipeline; import torch; pipe = StableDiffusionPipeline.from_pretrained('runwayml/stable-diffusion-v1-5', torch_dtype=torch.float16)"
+python -c "from diffusers import StableDiffusionPipeline; import torch; pipe = StableDiffusionPipeline.from_pretrained('rupeshs/LCM-runwayml-stable-diffusion-v1-5', torch_dtype=torch.float16)"
 ```
 
-This takes 15-30 minutes depending on internet speed.
+This takes 10-20 minutes depending on internet speed. LCM models are faster and require only 4-8 inference steps!
 
 ---
 
@@ -286,11 +325,11 @@ python scripts/quick_test.py
 
 #### Step 1.1: Collect Latents
 ```bash
-# For GPU (recommended)
-python scripts/collect_latents.py --num_samples 50 --num_steps 15 --device cuda
+# For GPU (recommended) - LCM uses 8 steps for fast inference
+python scripts/collect_latents.py --num_samples 50 --num_steps 8 --device cuda
 
-# For CPU (very slow, ~2 hours)
-python scripts/collect_latents.py --num_samples 20 --num_steps 10 --device cpu
+# For CPU (slow but works)
+python scripts/collect_latents.py --num_samples 20 --num_steps 8 --device cpu
 ```
 
 **Output:** `data/latents/run_YYYYMMDD_HHMMSS/`
@@ -350,7 +389,8 @@ If you have a GPU with 6GB VRAM (like RTX 4050, RTX 3060 Mobile), use these sett
 ```yaml
 # In configs/train_ppo.yaml
 env:
-  num_inference_steps: 15      # Reduced from 20
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  num_inference_steps: 8       # LCM works great with 4-8 steps
   
 ppo:
   n_steps: 512                 # Reduced from 2048
@@ -369,7 +409,7 @@ python scripts/train_ppo.py --config configs/rtx4050_optimized.yaml
 
 For development without GPU:
 ```bash
-python scripts/collect_latents.py --device cpu --num_samples 10 --num_steps 5
+python scripts/collect_latents.py --device cpu --num_samples 10 --num_steps 8
 python scripts/train_ppo.py --quick --device cpu
 ```
 
@@ -377,11 +417,11 @@ python scripts/train_ppo.py --quick --device cpu
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `num_inference_steps` | 15 | Diffusion steps (lower = faster, less quality) |
+| `num_inference_steps` | 8 | LCM diffusion steps (4-8 recommended) |
 | `steering_dim` | 256 | Low-rank steering dimension |
 | `lambda_transport` | 0.5 | Safety vs quality tradeoff |
-| `intervention_start` | 6 | Start steering at this step |
-| `intervention_end` | 11 | Stop steering at this step |
+| `intervention_start` | 2 | Start steering at this step |
+| `intervention_end` | 6 | Stop steering at this step |
 | `n_steps` | 512 | PPO rollout length |
 | `batch_size` | 32 | Minibatch size |
 | `total_timesteps` | 100000 | Training duration |
@@ -409,11 +449,11 @@ pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 - Use `configs/rtx4050_optimized.yaml`
 
 #### 3. "Model download fails"
-The model (`runwayml/stable-diffusion-v1-5`) doesn't require HuggingFace login. If download fails:
+The model (`rupeshs/LCM-runwayml-stable-diffusion-v1-5`) doesn't require HuggingFace login. If download fails:
 ```bash
 # Check internet connection
 # Try running again - downloads resume from where they stopped
-python -c "from diffusers import StableDiffusionPipeline; pipe = StableDiffusionPipeline.from_pretrained('runwayml/stable-diffusion-v1-5')"
+python -c "from diffusers import StableDiffusionPipeline; pipe = StableDiffusionPipeline.from_pretrained('rupeshs/LCM-runwayml-stable-diffusion-v1-5')"
 ```
 
 #### 4. "Module not found: src"
@@ -436,12 +476,13 @@ python scripts/collect_latents.py
 
 ---
 
-## 📊 Expected Results
+## 📊 Results
 
-### Phase 1: Probe Accuracy
-- Good: >85% accuracy at mid-timesteps
-- Moderate: 70-85% accuracy
-- Poor: <70% (concepts may not be linearly separable)
+### Phase 1: Probe Accuracy ✅ ACHIEVED
+- ✅ **Achieved: 90%** accuracy at timesteps 2-3
+- ✅ **Achieved: 97%** AUC at timestep 1
+- Target was >85% - **EXCEEDED!**
+- Linear separability **CONFIRMED** (Alain & Bengio, 2016)
 
 ### Phase 2: Training Metrics
 - `rollout/ep_rew_mean`: Should increase
@@ -471,9 +512,9 @@ python scripts/collect_latents.py
 
 ## 👥 Team
 
-- **Alkan** - [Role]
-- **Durak** - [Role]
-- **Chiucchiolo** - [Role]
+- **Alkan**
+- **Durak** 
+- **Chiucchiolo** 
 
 ---
 
@@ -483,5 +524,5 @@ This project is for educational purposes as part of the Advanced Machine Learnin
 
 ---
 
-*Last updated: December 8, 2025*
+*Last updated: December 13, 2025*
 

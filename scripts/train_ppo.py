@@ -61,13 +61,13 @@ def parse_args():
     parser.add_argument(
         "--model_id",
         type=str,
-        default="stabilityai/stable-diffusion-2-1-base",
+        default="rupeshs/LCM-runwayml-stable-diffusion-v1-5",  # LCM for fast inference
         help="HuggingFace model ID"
     )
     parser.add_argument(
         "--num_inference_steps",
         type=int,
-        default=20,
+        default=8,  # LCM works well with 4-8 steps
         help="Number of diffusion steps"
     )
     parser.add_argument(
@@ -83,17 +83,17 @@ def parse_args():
         help="Steering vector dimension"
     )
     
-    # Intervention window
+    # Intervention window (adjusted for LCM's 8 steps)
     parser.add_argument(
         "--intervention_start",
         type=int,
-        default=8,
+        default=2,  # ~25% of generation
         help="Start step for intervention"
     )
     parser.add_argument(
         "--intervention_end",
         type=int,
-        default=14,
+        default=6,  # ~75% of generation
         help="End step for intervention"
     )
     

@@ -2,7 +2,7 @@
 # This config is tuned to maximize performance while staying within memory limits
 
 # GPU Memory Budget: ~5.5GB (leaving headroom)
-# Stable Diffusion 2.1 base: ~2.5GB
+# LCM Model: ~2.5GB
 # Latent encoder + Policy: ~0.1GB
 # Batch processing: ~2GB
 # Safety margin: ~1GB
@@ -19,11 +19,11 @@ compute:
 # MODEL SETTINGS (Memory Optimized)
 # ============================================================
 model:
-  # Using v1.5 (no HuggingFace auth required)
-  model_id: "runwayml/stable-diffusion-v1-5"
-  # REDUCED from 20 to 15 steps - saves memory and time
-  # Quality impact is minimal, training speed ~25% faster
-  num_inference_steps: 15
+  # Using LCM (Latent Consistency Model) for faster inference
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  # LCM works with 4-8 steps - much faster than standard SD!
+  # Quality impact is minimal, training speed ~3x faster
+  num_inference_steps: 8  # LCM optimal range: 4-8 steps
   guidance_scale: 7.5
   latent_channels: 4
   latent_size: 64
@@ -38,9 +38,9 @@ env:
   # Action constraints
   max_action_norm: 0.1
   
-  # Intervention window (update after Phase 1)
-  intervention_start: 6   # Adjusted for 15 steps
-  intervention_end: 11    # Adjusted for 15 steps
+  # Intervention window (adjusted for LCM's 8 steps)
+  intervention_start: 2   # ~25% of generation
+  intervention_end: 6     # ~75% of generation
   
   # Use latent encoder to reduce observation space
   use_latent_encoder: true
@@ -89,7 +89,8 @@ policy:
 reward:
   lambda_transport: 0.5
   safety_classifier: null
-  probe_path: "./checkpoints/probes/latest/pytorch/"
+  # Update this path after running train_probes.py
+  probe_path: null
 
 # ============================================================
 # DATA SETTINGS (Memory Optimized)

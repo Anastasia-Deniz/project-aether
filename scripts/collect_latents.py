@@ -7,9 +7,9 @@ Usage:
     
     # Or with command line args:
     python scripts/collect_latents.py \
-        --model_id stabilityai/stable-diffusion-2-1-base \
+        --model_id rupeshs/LCM-runwayml-stable-diffusion-v1-5 \
         --num_samples 100 \
-        --num_steps 20 \
+        --num_steps 8 \
         --output_dir ./data/latents
 """
 
@@ -42,13 +42,13 @@ def parse_args():
     parser.add_argument(
         "--model_id", 
         type=str, 
-        default="runwayml/stable-diffusion-v1-5",  # No auth required
+        default="rupeshs/LCM-runwayml-stable-diffusion-v1-5",  # LCM for fast inference
         help="HuggingFace model ID or local path"
     )
     parser.add_argument(
         "--num_steps", 
         type=int, 
-        default=15,  # Reduced from 20 for RTX 4050 (6GB)
+        default=8,  # LCM works well with 4-8 steps
         help="Number of diffusion steps"
     )
     

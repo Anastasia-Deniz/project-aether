@@ -94,9 +94,10 @@ class AetherConfig:
     Configuration for the Aether environment.
     Default values optimized for RTX 4050 (6GB VRAM).
     """
-    # Using v1.5 as it doesn't require HuggingFace authentication
-    model_id: str = "runwayml/stable-diffusion-v1-5"
-    num_inference_steps: int = 15  # Reduced from 20 for 6GB GPUs
+    # Using LCM (Latent Consistency Model) for faster inference
+    # LCM requires only 4-8 steps instead of 15-50
+    model_id: str = "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+    num_inference_steps: int = 8  # LCM works well with 4-8 steps
     guidance_scale: float = 7.5
     latent_channels: int = 4
     latent_size: int = 64
@@ -105,10 +106,10 @@ class AetherConfig:
     device: str = "cuda"
     dtype: torch.dtype = torch.float16  # CRITICAL: Half precision for memory
     
-    # Intervention window (adjusted for 15 steps)
+    # Intervention window (adjusted for 8 steps with LCM)
     # Update after running Phase 1 sensitivity analysis
-    intervention_start: int = 6   # ~40% of generation
-    intervention_end: int = 11    # ~73% of generation
+    intervention_start: int = 2   # ~25% of generation
+    intervention_end: int = 6     # ~75% of generation
     
     # Action constraints
     max_action_norm: float = 0.1  # Clip steering magnitude
@@ -544,8 +545,8 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     
     config = AetherConfig(
-        model_id="stabilityai/stable-diffusion-2-1-base",
-        num_inference_steps=10,  # Very fast for testing
+        model_id="rupeshs/LCM-runwayml-stable-diffusion-v1-5",  # LCM for fast inference
+        num_inference_steps=8,  # LCM works well with 4-8 steps
         device=device,
         use_latent_encoder=True,  # Test with encoder
         encoded_latent_dim=256,
