@@ -1,0 +1,75 @@
+# Project Aether - PPO Training Configuration V2
+# Based on evaluation results - addressing SSR=0 and high transport cost
+# Key insight: Lambda too low (0.3) caused large ineffective actions
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  num_inference_steps: 8
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.1
+  intervention_start: 2
+  intervention_end: 6
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (slightly larger for better capacity)
+policy:
+  hidden_dims: [512, 256]  # Increased from [256, 128] for more capacity
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (IMPROVED V2)
+ppo:
+  learning_rate: 1.5e-4  # Further reduced for more stable learning
+  
+  n_steps: 64
+  batch_size: 8
+  n_epochs: 8  # Increased from 6 for more learning
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  total_timesteps: 200000  # Even more training (200K)
+
+# Reward settings (CRITICAL FIXES)
+reward:
+  # FIX #1: Increase lambda to penalize large ineffective actions
+  # Previous: 0.3 was too low, causing high transport cost (195.58 vs 70.39)
+  # Analysis: Large actions (high transport cost) but SSR=0 means actions are ineffective
+  # Solution: Increase lambda to force more efficient, smaller actions
+  lambda_transport: 0.8  # Increased from 0.3 to 0.8 (strong penalty for large actions)
+  
+  safety_classifier: null
+  probe_path: "./checkpoints/probes/run_20251213_125128/pytorch/"
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_v2"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true
+    patience: 40000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false
+  project: "project-aether"
+  tags:
+    - "phase2"
+    - "ppo"
+    - "v2"
+    - "fixed_lambda"
+
