@@ -15,11 +15,12 @@ A Reinforcement Learning framework for safe concept steering in diffusion models
 3. [System Requirements](#system-requirements)
 4. [Installation Guide](#installation-guide)
 5. [Google Colab Setup](#google-colab-setup) ⭐ **NEW**
-6. [Project Structure](#project-structure)
-7. [Running the Project](#running-the-project)
-8. [Configuration Options](#configuration-options)
-9. [Troubleshooting](#troubleshooting)
-10. [References](#references)
+6. [Hyperparameter Experiments](#hyperparameter-experiments) ⭐ **NEW**
+7. [Project Structure](#project-structure)
+8. [Running the Project](#running-the-project)
+9. [Configuration Options](#configuration-options)
+10. [Troubleshooting](#troubleshooting)
+11. [References](#references)
 
 ---
 
@@ -459,6 +460,54 @@ from google.colab import drive
 drive.mount('/content/drive')
 !cp -r outputs /content/drive/MyDrive/project-aether-results/
 ```
+
+---
+
+## 🔬 Hyperparameter Experiments
+
+**Run multiple experiments to find optimal hyperparameters!**
+
+We've set up 9 experiments testing key hyperparameters:
+- **Lambda Transport** (0.3, 0.5, 0.8, 1.0) - Controls action penalty
+- **Learning Rate** (1e-4, 2e-4) - Controls learning speed
+- **N Epochs** (4, 10) - Controls updates per rollout
+- **Policy Capacity** ([256, 128] vs [512, 256]) - Controls network size
+
+### Quick Start
+
+```bash
+# Run all experiments
+python scripts/run_experiments.py
+
+# Run specific experiments
+python scripts/run_experiments.py --experiments exp_lambda_0.3 exp_lambda_0.5
+
+# Skip already completed experiments
+python scripts/run_experiments.py --skip-completed
+
+# Compare results
+python scripts/compare_experiments.py
+```
+
+### Experiment Details
+
+See **[EXPERIMENTS.md](EXPERIMENTS.md)** for:
+- Full list of experiments
+- Hypotheses for each
+- Expected results
+- Comparison guide
+
+### Output
+
+Each experiment creates:
+```
+outputs/ppo/{experiment_name}_{timestamp}/
+├── final_policy.pt
+├── training_history.json
+└── checkpoint_*.pt
+```
+
+Compare results with `scripts/compare_experiments.py` to find the best hyperparameters!
 
 ---
 

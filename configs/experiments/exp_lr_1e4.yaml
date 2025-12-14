@@ -1,0 +1,51 @@
+# Experiment: Learning Rate = 1e-4 (Lower, more stable)
+# Hypothesis: Lower LR may lead to more stable but slower learning
+
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+env:
+  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  num_inference_steps: 8
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.1
+  intervention_start: 2
+  intervention_end: 6
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+policy:
+  hidden_dims: [512, 256]
+  activation: "relu"
+  latent_encoder_dim: 256
+
+ppo:
+  learning_rate: 1.0e-4  # Lower learning rate
+  n_steps: 64
+  batch_size: 8
+  n_epochs: 8
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  total_timesteps: 50000
+
+reward:
+  lambda_transport: 0.8
+  safety_classifier: null
+  probe_path: "auto"
+
+training:
+  experiment_name: "exp_lr_1e4"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: false
+
+wandb:
+  enabled: false
+
