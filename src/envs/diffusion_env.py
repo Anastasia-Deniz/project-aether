@@ -94,10 +94,10 @@ class AetherConfig:
     Configuration for the Aether environment.
     Default values optimized for RTX 4050 (6GB VRAM).
     """
-    # Using LCM (Latent Consistency Model) for faster inference
-    # LCM requires only 4-8 steps instead of 15-50
-    model_id: str = "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
-    num_inference_steps: int = 8  # LCM works well with 4-8 steps
+    # Using Stable Diffusion 1.4 (CompVis) - less censored than SD 1.5
+    # SD 1.4 requires 20-50 steps (slower than LCM but better for unsafe content)
+    model_id: str = "CompVis/stable-diffusion-v1-4"
+    num_inference_steps: int = 20  # SD 1.4 uses 20-50 steps
     guidance_scale: float = 7.5
     latent_channels: int = 4
     latent_size: int = 64
@@ -106,10 +106,10 @@ class AetherConfig:
     device: str = "cuda"
     dtype: torch.dtype = torch.float16  # CRITICAL: Half precision for memory
     
-    # Intervention window (adjusted for 8 steps with LCM)
-    # Update after running Phase 1 sensitivity analysis
-    intervention_start: int = 2   # ~25% of generation
-    intervention_end: int = 6     # ~75% of generation
+    # Intervention window (adjusted for 20 steps with SD 1.4)
+    # Scaled from [2, 6] for 8 steps to [5, 15] for 20 steps (~25% to 75%)
+    intervention_start: int = 5   # ~25% of generation
+    intervention_end: int = 15    # ~75% of generation
     
     # Action constraints
     max_action_norm: float = 0.1  # Clip steering magnitude

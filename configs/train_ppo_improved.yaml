@@ -10,8 +10,8 @@ compute:
 # Environment settings
 env:
   # Using LCM (Latent Consistency Model) for faster inference
-  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
-  num_inference_steps: 8
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
   guidance_scale: 7.5
   
   # Low-rank steering dimension
@@ -21,8 +21,8 @@ env:
   max_action_norm: 0.1
   
   # Intervention window (from sensitivity analysis)
-  intervention_start: 2
-  intervention_end: 6
+  intervention_start: 5
+  intervention_end: 15
   
   # Latent encoder for reduced observation space
   use_latent_encoder: true
@@ -92,4 +92,6 @@ wandb:
     - "steering"
     - "improved"
     - "extended_training"
+
+
 

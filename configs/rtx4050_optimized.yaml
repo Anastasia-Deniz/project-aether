@@ -20,10 +20,10 @@ compute:
 # ============================================================
 model:
   # Using LCM (Latent Consistency Model) for faster inference
-  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  model_id: "CompVis/stable-diffusion-v1-4"
   # LCM works with 4-8 steps - much faster than standard SD!
   # Quality impact is minimal, training speed ~3x faster
-  num_inference_steps: 8  # LCM optimal range: 4-8 steps
+  num_inference_steps: 20  # LCM optimal range: 4-8 steps
   guidance_scale: 7.5
   latent_channels: 4
   latent_size: 64
@@ -39,8 +39,8 @@ env:
   max_action_norm: 0.1
   
   # Intervention window (adjusted for LCM's 8 steps)
-  intervention_start: 2   # ~25% of generation
-  intervention_end: 6     # ~75% of generation
+  intervention_start: 5   # ~25% of generation
+  intervention_end: 15     # ~75% of generation
   
   # Use latent encoder to reduce observation space
   use_latent_encoder: true
@@ -145,4 +145,6 @@ paths:
   outputs: "./outputs"
   data: "./data"
   latents: "./data/latents"
+
+
 

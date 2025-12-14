@@ -42,13 +42,13 @@ def parse_args():
     parser.add_argument(
         "--model_id", 
         type=str, 
-        default="rupeshs/LCM-runwayml-stable-diffusion-v1-5",  # LCM for fast inference
+        default="CompVis/stable-diffusion-v1-4",  # SD 1.4 - less censored
         help="HuggingFace model ID or local path"
     )
     parser.add_argument(
         "--num_steps", 
         type=int, 
-        default=8,  # LCM works well with 4-8 steps
+        default=20,  # SD 1.4 uses 20-50 steps
         help="Number of diffusion steps"
     )
     

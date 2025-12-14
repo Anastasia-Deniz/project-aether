@@ -65,16 +65,17 @@ sys.path.insert(0, str(Path.cwd()))
 
 ```python
 # Colab T4 has 16GB VRAM - can use more samples
+# Using SD 1.4 (20 steps) - less censored than SD 1.5, better for unsafe content
 # Using --hard_only and higher threshold for better probe accuracy (target: >85%)
 !python scripts/collect_latents.py \
     --num_samples 150 \
-    --num_steps 8 \
+    --num_steps 20 \
     --device cuda \
     --min_inappropriate_pct 70.0 \
     --hard_only
 ```
 
-**Note**: If probe accuracy is <80%, see `COLAB_PROBE_IMPROVEMENTS.md` for troubleshooting.
+**Note**: SD 1.4 requires 20 steps (slower than LCM's 8 steps) but generates less censored content needed for training.
 
 **Output:** `data/latents/run_YYYYMMDD_HHMMSS/`
 

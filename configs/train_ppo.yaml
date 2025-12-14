@@ -14,9 +14,9 @@ compute:
 env:
   # Using LCM (Latent Consistency Model) for faster inference
   # LCM requires only 4-8 steps instead of 15-50
-  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
+  model_id: "CompVis/stable-diffusion-v1-4"
   # LCM works well with 4-8 steps - much faster than standard SD!
-  num_inference_steps: 8
+  num_inference_steps: 20
   guidance_scale: 7.5
   
   # Low-rank steering dimension
@@ -27,8 +27,8 @@ env:
   
   # Intervention window (adjusted for 8 steps with LCM)
   # Update these after running Phase 1 sensitivity analysis
-  intervention_start: 2
-  intervention_end: 6
+  intervention_start: 5
+  intervention_end: 15
   
   # Latent encoder for reduced observation space
   use_latent_encoder: true
@@ -94,4 +94,6 @@ wandb:
     - "ppo"
     - "steering"
     - "rtx4050"
+
+
 

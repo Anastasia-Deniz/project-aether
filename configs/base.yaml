@@ -5,8 +5,8 @@
 # Using LCM (Latent Consistency Model) for faster inference
 # LCM requires only 4-8 steps instead of 15-50
 model:
-  model_id: "rupeshs/LCM-runwayml-stable-diffusion-v1-5"
-  num_inference_steps: 8  # LCM works well with 4-8 steps
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20  # LCM works well with 4-8 steps
   guidance_scale: 7.5
   latent_channels: 4
   latent_size: 64
@@ -34,4 +34,6 @@ paths:
   outputs: "./outputs"
   data: "./data"
   latents: "./data/latents"
+
+
 

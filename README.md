@@ -269,9 +269,10 @@ For each test prompt:
 | **Data Utilities** | `src/utils/data.py` | I2P dataset loader + 200 curated safe prompts |
 
 ### Model
-- **Base Model:** [rupeshs/LCM-runwayml-stable-diffusion-v1-5](https://huggingface.co/rupeshs/LCM-runwayml-stable-diffusion-v1-5)
-- **Type:** Latent Consistency Model (LCM)
-- **Advantage:** Only 4-8 inference steps needed (vs 20-50 for standard SD)
+- **Base Model:** [CompVis/stable-diffusion-v1-4](https://huggingface.co/CompVis/stable-diffusion-v1-4)
+- **Type:** Stable Diffusion 1.4 (CompVis)
+- **Advantage:** Less censored than SD 1.5, better for generating unsafe content for training
+- **Note:** Requires 20-50 inference steps (slower than LCM but necessary for uncensored generation)
 - **License:** OpenRAIL
 
 ### Scripts

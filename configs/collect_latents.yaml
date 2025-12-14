@@ -40,3 +40,5 @@ output:
   dir: "./data/latents"
   format: "npz"  # Compressed numpy format
 
+
+
