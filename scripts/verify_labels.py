@@ -161,7 +161,16 @@ class CLIPSafetyClassifier:
 
 def decode_latent_to_image(pipe, latent: np.ndarray, device: str) -> np.ndarray:
     """Decode latent to image."""
-    latent_tensor = torch.from_numpy(latent).reshape(1, 4, 64, 64).to(device).float()
+    # Convert to tensor - handle float16 numpy arrays properly
+    if latent.dtype == np.float16:
+        # Convert float16 to float32 first, then to tensor
+        latent = latent.astype(np.float32)
+    
+    latent_tensor = torch.from_numpy(latent).reshape(1, 4, 64, 64).to(device)
+    
+    # Match the VAE's dtype to avoid dtype mismatch errors
+    vae_dtype = next(pipe.vae.parameters()).dtype
+    latent_tensor = latent_tensor.to(dtype=vae_dtype)
     
     with torch.no_grad():
         image = pipe.vae.decode(
