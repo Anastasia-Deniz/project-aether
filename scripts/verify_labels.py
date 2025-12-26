@@ -101,18 +101,29 @@ def parse_args():
         default=0.8,
         help="Minimum percentage of samples that must match labels (otherwise warns)"
     )
+    parser.add_argument(
+        "--informational_only",
+        action="store_true",
+        default=False,
+        help="Only report statistics, don't filter samples (recommended when labels are prompt-based)"
+    )
     
     return parser.parse_args()
 
 
 class CLIPSafetyClassifier:
-    """Simple CLIP-based safety classifier using text-image similarity."""
+    """Simple CLIP-based safety classifier using text-image similarity.
+    
+    NOTE: CLIP is not ideal for NSFW detection. Consider using a dedicated NSFW classifier instead.
+    This classifier has low confidence because CLIP wasn't trained for this task.
+    """
     
     def __init__(self, device: str = "cuda"):
         from transformers import CLIPProcessor, CLIPModel
         
         self.device = device
         print("Loading CLIP model for safety classification...")
+        print("⚠ Warning: CLIP is not ideal for NSFW detection. Consider using a dedicated NSFW classifier.")
         self.model = CLIPModel.from_pretrained("openai/clip-vit-large-patch14").to(device)
         self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-large-patch14")
         self.model.eval()
@@ -209,6 +220,7 @@ def verify_labels(
     method: str,
     probe_path: str = None,
     threshold: float = 0.7,
+    informational_only: bool = False,
 ) -> Dict:
     """Verify labels and create cleaned dataset."""
     
@@ -380,41 +392,75 @@ def verify_labels(
                 stats['unsafe_incorrect'] += 1
         
         # Verification logic:
-        # - Accept if prediction matches label (regardless of confidence)
-        # - OR if prediction matches AND confidence is high enough
-        # - Reject only if prediction is wrong AND confidence is too low (uncertain wrong prediction)
+        # IMPORTANT: Labels are based on PROMPTS, not actual image content.
+        # SD 1.4 may censor unsafe prompts and generate safe images.
+        # Therefore, we use a more lenient approach:
+        # - Accept if prediction matches label AND confidence is reasonable
+        # - Also accept if prediction matches label but confidence is low (CLIP limitation)
+        # - Only reject if prediction is wrong AND confidence is high (definitely mismatched)
+        
+        # Calculate a dynamic threshold based on observed confidence distribution
+        # If mean confidence is very low (<0.1), CLIP can't distinguish - accept matches anyway
+        mean_conf = np.mean(stats['confidence_scores']) if stats['confidence_scores'] else 0.0
+        
         if matches:
-            # Correct prediction - accept regardless of confidence
-            verified_indices.append(i)
-        elif confidence < threshold:
-            # Wrong prediction but low confidence - might be uncertain, reject
-            reason = f"prediction_mismatch (pred={pred}, true={true_label}) AND low_confidence ({confidence:.3f} < {threshold})"
-            stats['low_confidence'] += 1
-            mismatches.append({
-                'index': int(i),
-                'true_label': int(true_label),
-                'predicted': int(pred),
-                'prob': float(prob_used),
-                'confidence': float(confidence),
-                'reason': reason,
-                'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
-            })
+            # Correct prediction
+            if mean_conf < 0.05:
+                # CLIP confidence is very low - this is a CLIP limitation, not a data issue
+                # Accept correct predictions even with low confidence
+                verified_indices.append(i)
+            elif confidence >= threshold:
+                # Good confidence and correct prediction
+                verified_indices.append(i)
+            else:
+                # Correct but low confidence - still accept (CLIP limitation)
+                verified_indices.append(i)
+                mismatches.append({
+                    'index': int(i),
+                    'true_label': int(true_label),
+                    'predicted': int(pred),
+                    'prob': float(prob_used),
+                    'confidence': float(confidence),
+                    'reason': f"correct_prediction_but_low_confidence ({confidence:.3f} < {threshold})",
+                    'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
+                })
         else:
-            # Wrong prediction but high confidence - definitely wrong, reject
-            reason = f"prediction_mismatch (pred={pred}, true={true_label})"
-            mismatches.append({
-                'index': int(i),
-                'true_label': int(true_label),
-                'predicted': int(pred),
-                'prob': float(prob_used),
-                'confidence': float(confidence),
-                'reason': reason,
-                'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
-            })
+            # Wrong prediction
+            if confidence > 0.3:  # High confidence wrong prediction - definitely mismatched
+                reason = f"prediction_mismatch (pred={pred}, true={true_label}) with high_confidence ({confidence:.3f})"
+                mismatches.append({
+                    'index': int(i),
+                    'true_label': int(true_label),
+                    'predicted': int(pred),
+                    'prob': float(prob_used),
+                    'confidence': float(confidence),
+                    'reason': reason,
+                    'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
+                })
+            else:
+                # Wrong but low confidence - might be CLIP limitation or SD censorship
+                # Accept but flag for review
+                verified_indices.append(i)
+                stats['low_confidence'] += 1
+                mismatches.append({
+                    'index': int(i),
+                    'true_label': int(true_label),
+                    'predicted': int(pred),
+                    'prob': float(prob_used),
+                    'confidence': float(confidence),
+                    'reason': f"prediction_mismatch_but_low_confidence - possible_SD_censorship (pred={pred}, true={true_label}, conf={confidence:.3f})",
+                    'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
+                })
     
     # Print detailed statistics (flush to ensure output is shown)
     print("\n" + "="*60, flush=True)
     print("VERIFICATION STATISTICS", flush=True)
+    print("="*60, flush=True)
+    print("⚠ IMPORTANT NOTE:", flush=True)
+    print("  Labels are based on PROMPTS, not actual image content.", flush=True)
+    print("  SD 1.4 may censor unsafe prompts → generating safe images.", flush=True)
+    print("  CLIP is not ideal for NSFW detection (low confidence expected).", flush=True)
+    print("  Verification is INFORMATIONAL - use mismatch report to review.", flush=True)
     print("="*60, flush=True)
     print(f"Total samples: {stats['total']}", flush=True)
     if stats['total'] > 0:
@@ -461,8 +507,13 @@ def verify_labels(
     print(f"  Mismatches: {len(mismatches)}", flush=True)
     sys.stdout.flush()
     
-    if len(verified_indices) < len(X) * 0.5:
-        print(f"\n⚠ Warning: Less than 50% of samples verified! Check your data.")
+    if informational_only:
+        # Informational mode: accept all samples, just report statistics
+        print(f"\n📊 INFORMATIONAL MODE: Accepting all samples (no filtering)", flush=True)
+        print(f"   Statistics are for review only.", flush=True)
+        verified_indices = list(range(len(X)))  # Accept all
+    elif len(verified_indices) < len(X) * 0.5:
+        print(f"\n⚠ Warning: Less than 50% of samples verified! Check your data.", flush=True)
     
     # Save verified dataset
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -470,7 +521,7 @@ def verify_labels(
     verified_latents_dir.mkdir(exist_ok=True)
     
     # Load all timesteps and filter
-    print("\nFiltering all timesteps...")
+    print("\nFiltering all timesteps...", flush=True)
     timestep_files = sorted(latents_dir.glob("latents/timestep_*.npz"))
     if not timestep_files:
         timestep_files = sorted(latents_dir.glob("timestep_*.npz"))
@@ -550,6 +601,8 @@ def main():
     print(f"Output: {output_dir}")
     print(f"Method: {args.method}")
     print(f"Threshold: {args.threshold}")
+    if args.informational_only:
+        print("Mode: INFORMATIONAL ONLY (no filtering)")
     print("="*60)
     
     result = verify_labels(
@@ -560,6 +613,7 @@ def main():
         method=args.method,
         probe_path=args.probe_path,
         threshold=args.threshold,
+        informational_only=args.informational_only,
     )
     
     match_pct = len(result['verified_indices']) / (len(result['verified_indices']) + len(result['mismatches']))
