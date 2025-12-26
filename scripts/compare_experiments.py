@@ -1,175 +1,224 @@
 """
-Compare results from multiple PPO training experiments.
+Compare and visualize results from multiple experiments.
 
 Usage:
     python scripts/compare_experiments.py
-    python scripts/compare_experiments.py --experiments exp_lambda_0.3 exp_lambda_0.5
+    python scripts/compare_experiments.py --experiments exp_lambda_0.5 exp_lambda_0.8
+    python scripts/compare_experiments.py --plot  # Generate plots
 """
 
-import json
+import os
+import sys
 import argparse
+import json
 from pathlib import Path
-from typing import Dict, List, Optional
-import numpy as np
+from typing import List, Dict, Optional
 
-def load_training_history(exp_dir: Path) -> Optional[Dict]:
-    """Load training history from experiment directory."""
-    history_file = exp_dir / "training_history.json"
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+
+def load_experiment_history(experiment_name: str) -> Optional[Dict]:
+    """Load training history for an experiment."""
+    output_dir = Path("outputs/ppo")
+    if not output_dir.exists():
+        return None
+    
+    exp_dirs = list(output_dir.glob(f"{experiment_name}_*"))
+    if not exp_dirs:
+        return None
+    
+    # Get latest run
+    latest_dir = max(exp_dirs, key=lambda p: p.stat().st_mtime)
+    history_file = latest_dir / "training_history.json"
+    
     if not history_file.exists():
         return None
     
     with open(history_file) as f:
-        return json.load(f)
+        history = json.load(f)
+    
+    return {
+        "experiment_name": experiment_name,
+        "run_dir": str(latest_dir),
+        "history": history,
+    }
 
-def get_experiment_dirs(experiment_names: Optional[List[str]] = None) -> Dict[str, Path]:
-    """Get experiment directories."""
-    output_dir = Path("outputs/ppo")
-    if not output_dir.exists():
-        return {}
-    
-    experiments = {}
-    for exp_dir in output_dir.iterdir():
-        if not exp_dir.is_dir():
-            continue
-        
-        # Extract experiment name (format: exp_name_timestamp)
-        parts = exp_dir.name.split("_")
-        if len(parts) < 2:
-            continue
-        
-        # Try to find experiment name (everything before last timestamp-like part)
-        exp_name = "_".join(parts[:-1]) if len(parts) > 2 else parts[0]
-        
-        # Filter by requested experiments
-        if experiment_names and exp_name not in experiment_names:
-            continue
-        
-        # Only include if has training history
-        if (exp_dir / "training_history.json").exists():
-            if exp_name not in experiments:
-                experiments[exp_name] = []
-            experiments[exp_name].append(exp_dir)
-    
-    # For each experiment, get the most recent run
-    result = {}
-    for exp_name, dirs in experiments.items():
-        # Sort by modification time, get most recent
-        most_recent = max(dirs, key=lambda d: d.stat().st_mtime)
-        result[exp_name] = most_recent
-    
-    return result
 
-def compute_metrics(history: Dict) -> Dict:
-    """Compute summary metrics from training history."""
-    metrics = {}
-    
-    # Final values
-    if history.get("rewards"):
-        rewards = history["rewards"]
-        metrics["final_reward"] = rewards[-1]
-        metrics["mean_reward"] = np.mean(rewards[-10:]) if len(rewards) >= 10 else np.mean(rewards)
-        metrics["max_reward"] = np.max(rewards)
-        metrics["reward_std"] = np.std(rewards[-10:]) if len(rewards) >= 10 else np.std(rewards)
-    
-    if history.get("policy_losses"):
-        policy_losses = history["policy_losses"]
-        metrics["final_policy_loss"] = policy_losses[-1]
-        metrics["mean_policy_loss"] = np.mean(policy_losses[-10:]) if len(policy_losses) >= 10 else np.mean(policy_losses)
-    
-    if history.get("value_losses"):
-        value_losses = history["value_losses"]
-        metrics["final_value_loss"] = value_losses[-1]
-        metrics["mean_value_loss"] = np.mean(value_losses[-10:]) if len(value_losses) >= 10 else np.mean(value_losses)
-    
-    if history.get("entropies"):
-        entropies = history["entropies"]
-        metrics["final_entropy"] = entropies[-1]
-        metrics["mean_entropy"] = np.mean(entropies[-10:]) if len(entropies) >= 10 else np.mean(entropies)
-    
-    # Training progress
-    metrics["total_updates"] = len(history.get("rewards", []))
-    
-    return metrics
-
-def print_comparison(experiments: Dict[str, Path]):
-    """Print comparison table of experiments."""
-    print("\n" + "="*100)
-    print("EXPERIMENT COMPARISON")
-    print("="*100)
-    
-    all_metrics = {}
-    
-    for exp_name, exp_dir in sorted(experiments.items()):
-        history = load_training_history(exp_dir)
-        if not history:
-            continue
+def compare_experiments(experiment_names: Optional[List[str]] = None):
+    """Compare multiple experiments."""
+    if experiment_names is None:
+        # Find all experiments
+        output_dir = Path("outputs/ppo")
+        if not output_dir.exists():
+            print("❌ No experiments found in outputs/ppo/")
+            return
         
-        metrics = compute_metrics(history)
-        all_metrics[exp_name] = metrics
+        exp_dirs = list(output_dir.glob("exp_*"))
+        experiment_names = list(set(d.name.split("_")[0] + "_" + "_".join(d.name.split("_")[1:-1]) 
+                                   for d in exp_dirs if d.is_dir()))
+        experiment_names = sorted(experiment_names)
     
-    if not all_metrics:
-        print("No training histories found!")
+    print(f"\n📊 Comparing {len(experiment_names)} experiments\n")
+    
+    results = []
+    for exp_name in experiment_names:
+        data = load_experiment_history(exp_name)
+        if data:
+            history = data["history"]
+            
+            result = {
+                "experiment_name": exp_name,
+                "run_dir": data["run_dir"],
+            }
+            
+            # Extract metrics
+            if "rewards" in history and history["rewards"]:
+                rewards = history["rewards"]
+                result["final_reward"] = rewards[-1]
+                result["mean_reward"] = np.mean(rewards[-10:]) if len(rewards) >= 10 else np.mean(rewards)
+                result["max_reward"] = np.max(rewards)
+                result["min_reward"] = np.min(rewards)
+                result["num_updates"] = len(rewards)
+            
+            if "policy_loss" in history and history["policy_loss"]:
+                policy_losses = history["policy_loss"]
+                result["final_policy_loss"] = policy_losses[-1]
+                result["mean_policy_loss"] = np.mean(policy_losses[-10:]) if len(policy_losses) >= 10 else np.mean(policy_losses)
+            
+            if "value_loss" in history and history["value_loss"]:
+                value_losses = history["value_loss"]
+                result["final_value_loss"] = value_losses[-1]
+            
+            results.append(result)
+    
+    if not results:
+        print("❌ No completed experiments found")
         return
     
-    # Print table
-    print(f"\n{'Experiment':<25} {'Final Reward':<15} {'Mean Reward':<15} {'Policy Loss':<15} {'Value Loss':<15} {'Updates':<10}")
+    # Sort by final reward
+    results.sort(key=lambda x: x.get("final_reward", -float("inf")), reverse=True)
+    
+    # Print comparison table
+    print(f"{'Experiment':<35} {'Final Reward':<15} {'Mean Reward':<15} {'Policy Loss':<15} {'Updates':<10}")
     print("-" * 100)
     
-    for exp_name, metrics in sorted(all_metrics.items()):
-        print(
-            f"{exp_name:<25} "
-            f"{metrics.get('final_reward', 0):>14.4f} "
-            f"{metrics.get('mean_reward', 0):>14.4f} "
-            f"{metrics.get('final_policy_loss', 0):>14.4f} "
-            f"{metrics.get('final_value_loss', 0):>14.4f} "
-            f"{metrics.get('total_updates', 0):>9}"
-        )
+    for r in results:
+        exp_name = r["experiment_name"]
+        final_reward = r.get("final_reward", "N/A")
+        mean_reward = r.get("mean_reward", "N/A")
+        policy_loss = r.get("final_policy_loss", "N/A")
+        num_updates = r.get("num_updates", "N/A")
+        
+        if isinstance(final_reward, (int, float)):
+            final_reward = f"{final_reward:.4f}"
+        if isinstance(mean_reward, (int, float)):
+            mean_reward = f"{mean_reward:.4f}"
+        if isinstance(policy_loss, (int, float)):
+            policy_loss = f"{policy_loss:.4f}"
+        
+        print(f"{exp_name:<35} {str(final_reward):<15} {str(mean_reward):<15} {str(policy_loss):<15} {str(num_updates):<10}")
     
-    # Find best experiments
-    print("\n" + "="*100)
-    print("BEST EXPERIMENTS")
-    print("="*100)
+    # Print best experiment
+    if results and results[0].get("final_reward") is not None:
+        best = results[0]
+        print(f"\n🏆 Best Experiment: {best['experiment_name']}")
+        print(f"   Final Reward: {best.get('final_reward', 'N/A'):.4f}")
+        print(f"   Mean Reward: {best.get('mean_reward', 'N/A'):.4f}")
+        print(f"   Run Directory: {best.get('run_dir', 'N/A')}")
     
-    if all_metrics:
-        # Best final reward
-        best_reward = max(all_metrics.items(), key=lambda x: x[1].get('final_reward', -float('inf')))
-        print(f"Best Final Reward: {best_reward[0]} ({best_reward[1].get('final_reward', 0):.4f})")
+    return results
+
+
+def plot_experiments(experiment_names: List[str], output_dir: Path = Path("outputs/visualizations")):
+    """Plot training curves for multiple experiments."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+    
+    for exp_name in experiment_names:
+        data = load_experiment_history(exp_name)
+        if not data or "history" not in data:
+            continue
         
-        # Best mean reward
-        best_mean = max(all_metrics.items(), key=lambda x: x[1].get('mean_reward', -float('inf')))
-        print(f"Best Mean Reward: {best_mean[0]} ({best_mean[1].get('mean_reward', 0):.4f})")
+        history = data["history"]
         
-        # Lowest policy loss
-        best_policy = min(all_metrics.items(), key=lambda x: x[1].get('final_policy_loss', float('inf')))
-        print(f"Lowest Policy Loss: {best_policy[0]} ({best_policy[1].get('final_policy_loss', 0):.4f})")
+        # Plot rewards
+        if "rewards" in history and history["rewards"]:
+            axes[0, 0].plot(history["rewards"], label=exp_name, alpha=0.7)
         
-        # Lowest value loss
-        best_value = min(all_metrics.items(), key=lambda x: x[1].get('final_value_loss', float('inf')))
-        print(f"Lowest Value Loss: {best_value[0]} ({best_value[1].get('final_value_loss', 0):.4f})")
+        # Plot policy loss
+        if "policy_loss" in history and history["policy_loss"]:
+            axes[0, 1].plot(history["policy_loss"], label=exp_name, alpha=0.7)
+        
+        # Plot value loss
+        if "value_loss" in history and history["value_loss"]:
+            axes[1, 0].plot(history["value_loss"], label=exp_name, alpha=0.7)
+        
+        # Plot entropy
+        if "entropy" in history and history["entropy"]:
+            axes[1, 1].plot(history["entropy"], label=exp_name, alpha=0.7)
+    
+    axes[0, 0].set_title("Rewards")
+    axes[0, 0].set_xlabel("Update")
+    axes[0, 0].set_ylabel("Reward")
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+    
+    axes[0, 1].set_title("Policy Loss")
+    axes[0, 1].set_xlabel("Update")
+    axes[0, 1].set_ylabel("Loss")
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3)
+    
+    axes[1, 0].set_title("Value Loss")
+    axes[1, 0].set_xlabel("Update")
+    axes[1, 0].set_ylabel("Loss")
+    axes[1, 0].legend()
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    axes[1, 1].set_title("Entropy")
+    axes[1, 1].set_xlabel("Update")
+    axes[1, 1].set_ylabel("Entropy")
+    axes[1, 1].legend()
+    axes[1, 1].grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    
+    plot_file = output_dir / "experiments_comparison.png"
+    plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+    print(f"\n💾 Plot saved to: {plot_file}")
+    
+    plt.close()
+
 
 def main():
-    parser = argparse.ArgumentParser(description="Compare PPO training experiments")
+    parser = argparse.ArgumentParser(description="Compare experiment results")
     parser.add_argument(
         "--experiments",
         nargs="+",
         help="Specific experiments to compare (default: all)",
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate comparison plots",
+    )
     
     args = parser.parse_args()
     
-    experiments = get_experiment_dirs(args.experiments)
+    # Compare experiments
+    results = compare_experiments(args.experiments)
     
-    if not experiments:
-        print("No experiments found!")
-        print("Run experiments first with: python scripts/run_experiments.py")
-        return
-    
-    print(f"Found {len(experiments)} experiments:")
-    for exp_name in sorted(experiments.keys()):
-        print(f"  - {exp_name}")
-    
-    print_comparison(experiments)
+    # Generate plots if requested
+    if args.plot and results:
+        experiment_names = [r["experiment_name"] for r in results]
+        plot_experiments(experiment_names)
+        print("\n✅ Comparison complete!")
+
 
 if __name__ == "__main__":
     main()
-

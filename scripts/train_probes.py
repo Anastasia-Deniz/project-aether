@@ -509,6 +509,8 @@ def main():
         for t, s in sensitivity.items()
     }
     sens_data['optimal_window'] = {'start': start, 'end': end, 'top_timesteps': top_t}
+    # Store num_steps for proper timestep mapping in Phase 2
+    sens_data['_metadata'] = {'num_steps': num_steps, 'num_timesteps': num_steps + 1}
     
     with open(run_dir / "sensitivity_scores.json", "w") as f:
         json.dump(sens_data, f, indent=2)

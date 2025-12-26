@@ -1,0 +1,50 @@
+# Experiment: Total Timesteps = 100K (Extended Training)
+# Hypothesis: More training leads to better convergence
+
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+policy:
+  hidden_dims: [512, 256]
+  activation: "relu"
+
+ppo:
+  learning_rate: 1.5e-4
+  n_steps: 64
+  batch_size: 8
+  n_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  total_timesteps: 100000  # Extended training
+
+reward:
+  lambda_transport: 0.5
+  probe_path: "auto"
+  safety_classifier: null
+
+training:
+  experiment_name: "exp_timesteps_100k"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: false
+
+wandb:
+  enabled: false
+

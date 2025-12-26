@@ -18,12 +18,13 @@ Generative models often reproduce undesired or unsafe concepts due to limited co
 
 - **Unified ODE framework** for diffusion models as deterministic probability flow
 - **Linear probing** for concept detection in latent space (90% accuracy achieved)
-- **Empirical layer sensitivity analysis** with FID and SSR measurements ⭐ NEW
+- **Empirical layer sensitivity analysis** with FID and SSR measurements
 - **Layer sensitivity analysis** to identify optimal intervention points
 - **Modular reward system** with separate safety (R_safe) and transport (W2) components
 - **Optimal transport reward** combining safety and semantic alignment
-- **Improved intermediate reward shaping** for faster learning ⭐ NEW
-- **Configuration validation** to prevent runtime errors ⭐ NEW
+- **Improved intermediate reward shaping** for faster learning
+- **Configuration validation** to prevent runtime errors
+- **Hyperparameter experiment framework** for systematic optimization
 - **Evaluation framework** with SSR, LPIPS, FID, and transport cost metrics
 
 ### Methodology
@@ -90,9 +91,14 @@ python scripts/evaluate_ppo.py \
     --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt \
     --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/ \
     --num_samples 50
+
+# (Optional) Run hyperparameter experiments
+python scripts/run_experiments.py --experiments exp_lambda_0.5 exp_lambda_0.8
+python scripts/run_experiments.py --compare
 ```
 
-**For detailed instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**
+**For detailed instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**  
+**For experiments guide, see [EXPERIMENTS_GUIDE.md](EXPERIMENTS_GUIDE.md)**
 
 ---
 
@@ -129,15 +135,19 @@ project-aether/
 ├── scripts/                # Executable scripts
 │   ├── collect_latents.py      # Phase 1: Collect latents
 │   ├── train_probes.py         # Phase 1: Train probes
-│   ├── measure_layer_sensitivity.py  # Phase 1: Empirical FID/SSR measurement ⭐ NEW
+│   ├── measure_layer_sensitivity.py  # Phase 1: Empirical FID/SSR measurement
 │   ├── train_ppo.py            # Phase 2: Train policy
 │   ├── evaluate_ppo.py         # Phase 3: Evaluate policy
+│   ├── run_experiments.py      # Run hyperparameter experiments
+│   ├── compare_experiments.py  # Compare experiment results
 │   ├── generate_images_from_latents.py  # Visualize generated images
 │   └── visualize_probe_results.py        # Verify probe accuracy
 ├── configs/                # Configuration files
 │   ├── train_ppo_best.yaml     # Recommended config
+│   ├── colab_fast_20steps.yaml # Fast Colab training (2-3h)
 │   ├── rtx4050_optimized.yaml  # For 6GB GPUs
-│   └── colab_optimized.yaml    # For Google Colab
+│   ├── colab_optimized.yaml    # Full Colab training (8h)
+│   └── experiments/            # Hyperparameter experiment configs
 ├── tests/                  # Unit tests
 ├── data/                   # Data directory (latents, cache)
 ├── checkpoints/            # Saved models (probes, policies)
@@ -189,11 +199,11 @@ project-aether/
 ## 📚 Documentation
 
 - **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Detailed setup and usage instructions
-- **[colab_setup.ipynb](colab_setup.ipynb)** - Google Colab setup notebook
-- **[kaggle_setup.ipynb](kaggle_setup.ipynb)** - Kaggle notebook setup ⭐ NEW
-- **[configs/README.md](configs/README.md)** - Configuration guide
-- **[FIXES_APPLIED.md](FIXES_APPLIED.md)** - Recent improvements and fixes
+- **[EXPERIMENTS_GUIDE.md](EXPERIMENTS_GUIDE.md)** - Hyperparameter experiments guide
 - **[CODEBASE_ANALYSIS.md](CODEBASE_ANALYSIS.md)** - Comprehensive codebase analysis
+- **[colab_setup.ipynb](colab_setup.ipynb)** - Google Colab setup notebook (with fast training)
+- **[kaggle_setup.ipynb](kaggle_setup.ipynb)** - Kaggle notebook setup
+- **[configs/README.md](configs/README.md)** - Configuration guide
 
 ---
 
@@ -201,12 +211,31 @@ project-aether/
 
 ### Recommended Configs
 
-| Config | Use Case | Description |
-|--------|----------|-------------|
-| `train_ppo_best.yaml` | **Recommended** | Optimal from experiments (λ=0.5, 100K steps) |
-| `train_ppo_optimized.yaml` | Extended training | Maximum performance (λ=0.8, 200K steps) |
-| `rtx4050_optimized.yaml` | Low VRAM | Optimized for 6GB GPUs |
-| `colab_optimized.yaml` | Google Colab/Kaggle | Optimized for T4/P100 GPU (16GB VRAM) |
+| Config | Use Case | Timesteps | Time | Description |
+|--------|----------|-----------|------|-------------|
+| `train_ppo_best.yaml` | **Recommended** | 100K | 4-6h | Optimal from experiments (λ=0.5) |
+| `colab_fast_20steps.yaml` | **Colab Fast** | 50K | 2-3h | Fast training, compatible with probes |
+| `train_ppo_fast_optimized.yaml` | Very Fast | 30K | ~1h | Quick testing/iteration |
+| `train_ppo_optimized.yaml` | Extended | 200K | 8-10h | Maximum performance (λ=0.8) |
+| `rtx4050_optimized.yaml` | Low VRAM | 100K | 4-6h | Optimized for 6GB GPUs |
+| `colab_optimized.yaml` | Colab Full | 200K | 8h | Full training on Colab T4 |
+
+### Running Experiments
+
+To find optimal hyperparameters, run experiments:
+
+```bash
+# List all available experiments
+python scripts/run_experiments.py --list
+
+# Run specific experiments (e.g., lambda values)
+python scripts/run_experiments.py --experiments exp_lambda_0.3 exp_lambda_0.5 exp_lambda_0.8
+
+# Compare completed experiments
+python scripts/run_experiments.py --compare
+```
+
+See [EXPERIMENTS_GUIDE.md](EXPERIMENTS_GUIDE.md) for complete guide.
 
 ---
 

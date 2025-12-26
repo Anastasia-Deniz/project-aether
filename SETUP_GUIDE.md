@@ -202,6 +202,12 @@ py -3.11 scripts/visualize_probe_results.py `
 py -3.11 scripts/train_ppo.py --config configs/train_ppo_best.yaml
 ```
 
+**Fast training for Colab (2-3 hours instead of 8 hours):**
+```powershell
+# Use fast config optimized for Colab T4 GPU
+py -3.11 scripts/train_ppo.py --config configs/colab_fast_20steps.yaml
+```
+
 **Quick test (minimal settings):**
 ```powershell
 py -3.11 scripts/train_ppo.py --quick
@@ -219,6 +225,22 @@ py -3.11 scripts/train_ppo.py `
 **Output location:**
 - Policy: `outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt`
 - Training history: `outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/training_history.json`
+
+#### Fast Training Configurations
+
+For Colab or time-constrained training, use optimized fast configs:
+
+| Config | Timesteps | Time | Use Case |
+|--------|-----------|------|----------|
+| `colab_fast_20steps.yaml` | 50K | 2-3h | **Recommended** - Compatible with existing probes |
+| `colab_fast.yaml` | 50K | 1.5-2h | Requires probes trained with 8 steps |
+| `train_ppo_best.yaml` | 100K | 4-6h | Best quality, longer training |
+
+**Key optimizations in fast configs:**
+- Reduced timesteps: 200K → 50K (75% reduction)
+- Reduced epochs: 8 → 4 (50% faster, also optimal)
+- Smaller rollouts: 128 → 64 (faster collection)
+- Larger batch size: 16 → 32 (faster updates on Colab T4)
 
 ### 6. Phase 3: Evaluation
 

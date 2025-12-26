@@ -223,6 +223,8 @@ def evaluate_policy(
     labels: List[int],
     device: str,
     num_samples: Optional[int] = None,
+    intervention_start: Optional[int] = None,
+    intervention_end: Optional[int] = None,
 ) -> tuple:
     """
     Evaluate the trained policy on test prompts.
@@ -287,8 +289,10 @@ def evaluate_policy(
         
         # ===== Generate WITH steering (policy) =====
         # Enable steering with configured window
-        env.config.intervention_start = args.intervention_start
-        env.config.intervention_end = args.intervention_end
+        if intervention_start is not None:
+            env.config.intervention_start = intervention_start
+        if intervention_end is not None:
+            env.config.intervention_end = intervention_end
         
         obs, info = env.reset(seed=i, options={'prompt': prompt})
         done = False
@@ -544,6 +548,8 @@ def main():
         labels=labels,
         device=device,
         num_samples=args.num_samples,
+        intervention_start=args.intervention_start,
+        intervention_end=args.intervention_end,
     )
     
     # Print results

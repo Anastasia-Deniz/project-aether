@@ -1,0 +1,75 @@
+# Project Aether - FAST Colab Configuration (2-3 hours training)
+# Optimized for Google Colab T4 GPU (16GB VRAM)
+# Target: Reduce training time from 8 hours to 2-3 hours (~70% reduction)
+
+# Key optimizations:
+# 1. Reduced total_timesteps: 200K → 50K (75% reduction)
+# 2. Reduced num_inference_steps: 20 → 8 (60% faster per episode)
+# 3. Reduced n_epochs: 8 → 4 (50% faster updates, also better from experiments)
+# 4. Smaller rollouts: 128 → 64 (faster collection)
+# 5. Larger batch size: 16 → 32 (faster updates, Colab has 16GB VRAM)
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  # CRITICAL: Reduced from 20 to 8 steps - biggest time saver!
+  # 8 steps is still sufficient for SD 1.4 with proper guidance
+  num_inference_steps: 8
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05  # Tighter clipping for better control
+  # Intervention window scaled for 8 steps: [2, 6] (25%-75% of generation)
+  intervention_start: 2
+  intervention_end: 6
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (good capacity)
+policy:
+  hidden_dims: [512, 256]
+  activation: "relu"
+
+# PPO hyperparameters (OPTIMIZED for speed)
+ppo:
+  learning_rate: 2.0e-4  # Slightly higher for faster learning
+  
+  # Smaller rollouts = faster collection
+  n_steps: 64  # Reduced from 128 for faster rollouts
+  # Larger batches = faster updates (Colab T4 has 16GB VRAM)
+  batch_size: 32  # Increased from 16 for faster updates
+  # Fewer epochs = faster updates (experiments showed 4 is optimal anyway)
+  n_epochs: 4  # Reduced from 8 (also better from experiments)
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # CRITICAL: Reduced from 200K to 50K timesteps (75% reduction)
+  # With 8 steps instead of 20, this should take ~2-3 hours
+  total_timesteps: 50000
+
+# Reward settings (from best experiments)
+reward:
+  lambda_transport: 0.5  # Optimal from experiments
+  probe_path: "auto"  # Auto-detect latest probe
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_colab_fast"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: false  # Disabled for faster training
+
+wandb:
+  enabled: false
+

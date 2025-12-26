@@ -542,10 +542,12 @@ class DiffusionSteeringEnv(gym.Env):
         if self.sensitivity_weights and self.actions_taken:
             # Weight actions by sensitivity scores
             weighted_cost = 0.0
+            # Get num_steps used in sensitivity analysis (stored in metadata)
+            sensitivity_num_steps = self.sensitivity_weights.get('_metadata', {}).get('num_steps', 8)
+            
             for timestep_idx, action_norm_sq in self.actions_taken:
-                # Map timestep to sensitivity weight (scale from 8-step to current num_steps)
-                # Sensitivity analysis was for 8 steps, we have 20 steps
-                sensitivity_t = int(timestep_idx * 8 / self.config.num_inference_steps)
+                # Map timestep to sensitivity weight (scale from sensitivity_num_steps to current num_steps)
+                sensitivity_t = int(timestep_idx * sensitivity_num_steps / self.config.num_inference_steps)
                 weight = self.sensitivity_weights.get(str(sensitivity_t), 1.0)
                 # Lower weight = more sensitive = less penalty (inverse relationship)
                 # So we divide by weight (higher sensitivity = lower penalty)
@@ -588,10 +590,14 @@ class DiffusionSteeringEnv(gym.Env):
                     weights = {
                         t: info.get('score', 1.0)
                         for t, info in data.items()
-                        if t != "optimal_window" and isinstance(info, dict)
+                        if t not in ("optimal_window", "_metadata") and isinstance(info, dict)
                     }
                     if weights:
-                        print(f"Loaded sensitivity weights from {path}")
+                        # Store metadata for proper timestep mapping
+                        metadata = data.get('_metadata', {})
+                        sensitivity_num_steps = metadata.get('num_steps', 8)  # Default to 8 for backward compatibility
+                        weights['_metadata'] = {'num_steps': sensitivity_num_steps}
+                        print(f"Loaded sensitivity weights from {path} (num_steps={sensitivity_num_steps})")
                         return weights
             except Exception as e:
                 print(f"Warning: Could not load sensitivity weights from {path}: {e}")
