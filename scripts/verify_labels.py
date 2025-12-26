@@ -35,6 +35,18 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.models.linear_probe import LinearProbe
 
 
+class NumpyEncoder(json.JSONEncoder):
+    """Custom JSON encoder for numpy types."""
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        return super(NumpyEncoder, self).default(obj)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Verify labels using safety classifier"
@@ -324,7 +336,7 @@ def verify_labels(
             # Store debug info for first few samples
             if i < 5:
                 print(f"\n  Sample {i} (label={y[i]}): safe_sim={safe_sim[0]:.3f}, unsafe_sim={unsafe_sim[0]:.3f}, "
-                      f"prob={probs[0]:.3f}, pred={preds[0]}")
+                      f"prob={probs[0]:.3f}, pred={preds[0]}", flush=True)
         
         if 'probe' in classifiers:
             latent_tensor = torch.from_numpy(X[i]).float().unsqueeze(0).to(device)
@@ -378,61 +390,63 @@ def verify_labels(
                 stats['low_confidence'] += 1
             
             mismatches.append({
-                'index': i,
-                'true_label': true_label,
-                'predicted': pred,
-                'prob': prob_used,
-                'confidence': confidence,
+                'index': int(i),
+                'true_label': int(true_label),
+                'predicted': int(pred),
+                'prob': float(prob_used),
+                'confidence': float(confidence),
                 'reason': '; '.join(reason),
                 'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
             })
     
-    # Print detailed statistics
-    print("\n" + "="*60)
-    print("VERIFICATION STATISTICS")
-    print("="*60)
-    print(f"Total samples: {stats['total']}")
-    print(f"Matches: {stats['matches']} ({100*stats['matches']/stats['total']:.1f}%)")
-    print(f"Mismatches: {stats['mismatches']} ({100*stats['mismatches']/stats['total']:.1f}%)")
-    print(f"\nLabel accuracy:")
-    print(f"  Safe (label=0): {stats['safe_correct']} correct, {stats['safe_incorrect']} incorrect")
-    print(f"  Unsafe (label=1): {stats['unsafe_correct']} correct, {stats['unsafe_incorrect']} incorrect")
-    print(f"\nConfidence statistics:")
-    if stats['confidence_scores']:
-        conf_scores = np.array(stats['confidence_scores'])
-        print(f"  Mean: {np.mean(conf_scores):.3f}")
-        print(f"  Median: {np.median(conf_scores):.3f}")
-        print(f"  Min: {np.min(conf_scores):.3f}")
-        print(f"  Max: {np.max(conf_scores):.3f}")
-        print(f"  Below threshold ({threshold}): {stats['low_confidence']} ({100*stats['low_confidence']/stats['total']:.1f}%)")
-    print(f"\nProbability statistics:")
-    if stats['prob_scores']:
-        prob_scores = np.array(stats['prob_scores'])
-        print(f"  Mean: {np.mean(prob_scores):.3f}")
-        print(f"  Median: {np.median(prob_scores):.3f}")
-        print(f"  Min: {np.min(prob_scores):.3f}")
-        print(f"  Max: {np.max(prob_scores):.3f}")
-        # Show distribution
-        safe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 0]
-        unsafe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 1]
-        if safe_probs:
-            print(f"  Safe samples (label=0) - Mean prob: {np.mean(safe_probs):.3f}")
-        if unsafe_probs:
-            print(f"  Unsafe samples (label=1) - Mean prob: {np.mean(unsafe_probs):.3f}")
-    print("="*60)
+    # Print detailed statistics (flush to ensure output is shown)
+    print("\n" + "="*60, flush=True)
+    print("VERIFICATION STATISTICS", flush=True)
+    print("="*60, flush=True)
+    print(f"Total samples: {stats['total']}", flush=True)
+    if stats['total'] > 0:
+        print(f"Matches: {stats['matches']} ({100*stats['matches']/stats['total']:.1f}%)", flush=True)
+        print(f"Mismatches: {stats['mismatches']} ({100*stats['mismatches']/stats['total']:.1f}%)", flush=True)
+        print(f"\nLabel accuracy:", flush=True)
+        print(f"  Safe (label=0): {stats['safe_correct']} correct, {stats['safe_incorrect']} incorrect", flush=True)
+        print(f"  Unsafe (label=1): {stats['unsafe_correct']} correct, {stats['unsafe_incorrect']} incorrect", flush=True)
+        print(f"\nConfidence statistics:", flush=True)
+        if stats['confidence_scores']:
+            conf_scores = np.array(stats['confidence_scores'])
+            print(f"  Mean: {np.mean(conf_scores):.3f}", flush=True)
+            print(f"  Median: {np.median(conf_scores):.3f}", flush=True)
+            print(f"  Min: {np.min(conf_scores):.3f}", flush=True)
+            print(f"  Max: {np.max(conf_scores):.3f}", flush=True)
+            print(f"  Below threshold ({threshold}): {stats['low_confidence']} ({100*stats['low_confidence']/stats['total']:.1f}%)", flush=True)
+        print(f"\nProbability statistics:", flush=True)
+        if stats['prob_scores']:
+            prob_scores = np.array(stats['prob_scores'])
+            print(f"  Mean: {np.mean(prob_scores):.3f}", flush=True)
+            print(f"  Median: {np.median(prob_scores):.3f}", flush=True)
+            print(f"  Min: {np.min(prob_scores):.3f}", flush=True)
+            print(f"  Max: {np.max(prob_scores):.3f}", flush=True)
+            # Show distribution
+            safe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 0]
+            unsafe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 1]
+            if safe_probs:
+                print(f"  Safe samples (label=0) - Mean prob: {np.mean(safe_probs):.3f}", flush=True)
+            if unsafe_probs:
+                print(f"  Unsafe samples (label=1) - Mean prob: {np.mean(unsafe_probs):.3f}", flush=True)
+    print("="*60, flush=True)
     
     # Show sample mismatches for debugging
     if len(mismatches) > 0:
-        print(f"\nSample mismatches (first 10):")
+        print(f"\nSample mismatches (first 10):", flush=True)
         for mm in mismatches[:10]:
             print(f"  Index {mm['index']}: True={mm['true_label']}, Pred={mm['predicted']}, "
-                  f"Prob={mm['prob']:.3f}, Conf={mm['confidence']:.3f}, Reason={mm['reason']}")
+                  f"Prob={mm['prob']:.3f}, Conf={mm['confidence']:.3f}, Reason={mm['reason']}", flush=True)
         if len(mismatches) > 10:
-            print(f"  ... and {len(mismatches) - 10} more")
+            print(f"  ... and {len(mismatches) - 10} more", flush=True)
     
-    print(f"\n✓ Verification complete!")
-    print(f"  Verified samples: {len(verified_indices)}/{len(X)} ({100*len(verified_indices)/len(X):.1f}%)")
-    print(f"  Mismatches: {len(mismatches)}")
+    print(f"\n✓ Verification complete!", flush=True)
+    print(f"  Verified samples: {len(verified_indices)}/{len(X)} ({100*len(verified_indices)/len(X):.1f}%)", flush=True)
+    print(f"  Mismatches: {len(mismatches)}", flush=True)
+    sys.stdout.flush()
     
     if len(verified_indices) < len(X) * 0.5:
         print(f"\n⚠ Warning: Less than 50% of samples verified! Check your data.")
@@ -470,9 +484,9 @@ def verify_labels(
     with open(output_dir / "unsafe_prompts.json", 'w') as f:
         json.dump(verified_unsafe, f, indent=2)
     
-    # Save mismatch report
+    # Save mismatch report (use custom encoder for numpy types)
     with open(output_dir / "mismatch_report.json", 'w') as f:
-        json.dump(mismatches, f, indent=2)
+        json.dump(mismatches, f, indent=2, cls=NumpyEncoder)
     
     # Copy metadata
     metadata_file = latents_dir / "metadata.json"
