@@ -133,14 +133,23 @@ class I2PDataset:
         
         max_samples = max_samples or self.config.num_unsafe_samples
         
+        # Store original thresholds for potential relaxation
+        original_min_inappropriate = min_inappropriate_pct
+        original_min_nudity = min_nudity_pct
+        
         filtered = []
         skipped_long = 0
         skipped_low_threshold = 0
         
+        # Search through entire dataset (no early stopping to ensure we find all matching prompts)
         for item in self._dataset:
-            # Check category filter
+            # Check category filter - STRICT: Only sexual category when focusing on nudity
             item_cats = item["categories"].lower()
-            if categories:
+            if focus_nudity_gore:
+                # Strictly require sexual category
+                if "sexual" not in item_cats:
+                    continue
+            elif categories:
                 if not any(cat.lower() in item_cats for cat in categories):
                     continue
             
@@ -172,10 +181,86 @@ class I2PDataset:
                 "is_hard": item["hard"] == 1,
                 "label": 1,  # Unsafe
             })
+        
+        # If we don't have enough prompts, try relaxing criteria iteratively until we have enough
+        if len(filtered) < max_samples:
+            print(f"Warning: Only found {len(filtered)} prompts with strict criteria (requested {max_samples})")
+            print(f"Relaxing criteria iteratively to find exactly {max_samples} sexual prompts...")
             
-            # Stop when we have enough (with some buffer for filtering)
-            if len(filtered) >= max_samples * 3:  # Increased buffer for stricter filtering
-                break
+            # Try multiple relaxation levels until we have enough
+            relaxation_levels = [
+                {"inappropriate": max(50.0, min_inappropriate_pct - 10.0), "nudity": max(40.0, min_nudity_pct - 10.0), "hard": hard_only},
+                {"inappropriate": max(40.0, min_inappropriate_pct - 20.0), "nudity": max(30.0, min_nudity_pct - 20.0), "hard": hard_only},
+                {"inappropriate": max(30.0, min_inappropriate_pct - 30.0), "nudity": max(20.0, min_nudity_pct - 30.0), "hard": hard_only},
+                {"inappropriate": 20.0, "nudity": 10.0, "hard": False},  # Final relaxation: allow all sexual prompts
+            ]
+            
+            for level_idx, level in enumerate(relaxation_levels):
+                relaxed_inappropriate = level["inappropriate"]
+                relaxed_nudity = level["nudity"] if focus_nudity_gore else 0.0
+                relax_hard_filter = not level["hard"]  # True means we relax the hard filter
+                
+                filtered_relaxed = []
+                skipped_long_relaxed = 0
+                skipped_low_threshold_relaxed = 0
+                
+                for item in self._dataset:
+                    item_cats = item["categories"].lower()
+                    # STRICT: Only sexual category
+                    if categories and "sexual" not in item_cats:
+                        continue
+                    
+                    # Only apply hard filter if we're NOT relaxing it
+                    if hard_only and not relax_hard_filter and item["hard"] != 1:
+                        continue
+                        
+                    if item["inappropriate_percentage"] < relaxed_inappropriate:
+                        skipped_low_threshold_relaxed += 1
+                        continue
+                    
+                    if focus_nudity_gore and "sexual" in item_cats:
+                        if item.get("nudity_percentage", 0) < relaxed_nudity:
+                            skipped_low_threshold_relaxed += 1
+                            continue
+                    
+                    if not is_prompt_valid(item["prompt"], max_tokens=77):
+                        skipped_long_relaxed += 1
+                        continue
+                        
+                    filtered_relaxed.append({
+                        "prompt": item["prompt"],
+                        "categories": item["categories"],
+                        "inappropriate_pct": item["inappropriate_percentage"],
+                        "nudity_pct": item.get("nudity_percentage", 0),
+                        "is_hard": item["hard"] == 1,
+                        "label": 1,
+                    })
+                    
+                    # Stop early if we have enough
+                    if len(filtered_relaxed) >= max_samples * 2:  # Get buffer for sorting
+                        break
+                
+                if len(filtered_relaxed) >= max_samples:
+                    hard_status = "relaxed (allowing non-hard)" if relax_hard_filter else ("hard_only" if hard_only else "all")
+                    print(f"✓ Found {len(filtered_relaxed)} sexual prompts with relaxed criteria (level {level_idx+1}: inappropriate≥{relaxed_inappropriate}%, nudity≥{relaxed_nudity}%, {hard_status})")
+                    filtered = filtered_relaxed
+                    skipped_low_threshold = skipped_low_threshold_relaxed
+                    skipped_long = skipped_long_relaxed
+                    min_inappropriate_pct = relaxed_inappropriate
+                    min_nudity_pct = relaxed_nudity
+                    break
+                elif len(filtered_relaxed) > len(filtered):
+                    # Keep the best we've found so far
+                    filtered = filtered_relaxed
+                    skipped_low_threshold = skipped_low_threshold_relaxed
+                    skipped_long = skipped_long_relaxed
+                    min_inappropriate_pct = relaxed_inappropriate
+                    min_nudity_pct = relaxed_nudity
+                    print(f"  Level {level_idx+1}: Found {len(filtered_relaxed)} prompts (need {max_samples})")
+            
+            if len(filtered) < max_samples:
+                print(f"⚠ Note: Dataset only contains {len(filtered)} sexual prompts meeting criteria (requested {max_samples})")
+                print(f"  Will use all available prompts.")
         
         # Sort by quality (higher nudity percentages first)
         if focus_nudity_gore:
