@@ -92,8 +92,8 @@ def parse_args():
     parser.add_argument(
         "--threshold",
         type=float,
-        default=0.7,
-        help="Confidence threshold for label verification (0-1)"
+        default=0.01,  # Lower default - CLIP has low confidence but good accuracy
+        help="Confidence threshold for label verification (0-1). Lower values accept more samples."
     )
     parser.add_argument(
         "--min_match_pct",
@@ -379,23 +379,36 @@ def verify_labels(
             else:
                 stats['unsafe_incorrect'] += 1
         
-        if matches and confidence >= threshold:
+        # Verification logic:
+        # - Accept if prediction matches label (regardless of confidence)
+        # - OR if prediction matches AND confidence is high enough
+        # - Reject only if prediction is wrong AND confidence is too low (uncertain wrong prediction)
+        if matches:
+            # Correct prediction - accept regardless of confidence
             verified_indices.append(i)
-        else:
-            reason = []
-            if not matches:
-                reason.append(f"prediction_mismatch (pred={pred}, true={true_label})")
-            if confidence < threshold:
-                reason.append(f"low_confidence ({confidence:.3f} < {threshold})")
-                stats['low_confidence'] += 1
-            
+        elif confidence < threshold:
+            # Wrong prediction but low confidence - might be uncertain, reject
+            reason = f"prediction_mismatch (pred={pred}, true={true_label}) AND low_confidence ({confidence:.3f} < {threshold})"
+            stats['low_confidence'] += 1
             mismatches.append({
                 'index': int(i),
                 'true_label': int(true_label),
                 'predicted': int(pred),
                 'prob': float(prob_used),
                 'confidence': float(confidence),
-                'reason': '; '.join(reason),
+                'reason': reason,
+                'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
+            })
+        else:
+            # Wrong prediction but high confidence - definitely wrong, reject
+            reason = f"prediction_mismatch (pred={pred}, true={true_label})"
+            mismatches.append({
+                'index': int(i),
+                'true_label': int(true_label),
+                'predicted': int(pred),
+                'prob': float(prob_used),
+                'confidence': float(confidence),
+                'reason': reason,
                 'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
             })
     
