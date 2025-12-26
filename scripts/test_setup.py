@@ -138,7 +138,7 @@ def test_environment():
         
         # Just test config creation, not full env (would download model)
         config = AetherConfig(
-            num_inference_steps=2,
+            num_inference_steps=20,  # Use realistic number of steps
             device="cpu",
         )
         print(f"  ✓ Config created (latent_dim={config.latent_dim})")

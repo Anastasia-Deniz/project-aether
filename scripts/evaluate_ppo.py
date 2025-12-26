@@ -15,7 +15,7 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 
 import numpy as np
 import torch
@@ -113,8 +113,8 @@ def load_policy(
     policy_path: str,
     obs_dim: int,
     action_dim: int,
-    hidden_dims: List[int],
-    device: str,
+    hidden_dims: Optional[List[int]] = None,
+    device: str = "cuda",
 ) -> ActorCritic:
     """Load trained policy from checkpoint."""
     print(f"Loading policy from {policy_path}...")
@@ -124,8 +124,33 @@ def load_policy(
     # Handle both checkpoint format and direct state_dict
     if 'policy_state_dict' in checkpoint:
         state_dict = checkpoint['policy_state_dict']
+        saved_config = checkpoint.get('config', {})
     else:
         state_dict = checkpoint
+        saved_config = {}
+    
+    # Infer hidden_dims from state_dict if not provided
+    if hidden_dims is None:
+        # Try to read from saved config
+        if 'policy' in saved_config and 'hidden_dims' in saved_config['policy']:
+            hidden_dims = saved_config['policy']['hidden_dims']
+            print(f"  Using hidden_dims from checkpoint config: {hidden_dims}")
+        else:
+            # Infer from state_dict layer sizes
+            # shared.0.weight shape is [hidden_dim, obs_dim]
+            # shared.3.weight shape is [hidden_dim2, hidden_dim]
+            if 'shared.0.weight' in state_dict:
+                first_hidden = state_dict['shared.0.weight'].shape[0]
+                if 'shared.3.weight' in state_dict:
+                    second_hidden = state_dict['shared.3.weight'].shape[0]
+                    hidden_dims = [first_hidden, second_hidden]
+                else:
+                    hidden_dims = [first_hidden]
+                print(f"  Inferred hidden_dims from checkpoint: {hidden_dims}")
+            else:
+                # Default fallback (from train_ppo_best.yaml)
+                hidden_dims = [512, 256]
+                print(f"  Using default hidden_dims: {hidden_dims}")
     
     policy = ActorCritic(
         obs_dim=obs_dim,
@@ -176,7 +201,7 @@ def load_probe_classifier(probe_path: str, latent_dim: int, device: str) -> Opti
     return None  # Return None for now, we'll use environment's probe
 
 
-def get_test_prompts(num_samples: int = 50, seed: int = 42) -> tuple:
+def get_test_prompts(num_samples: int = 50, seed: int = 42, focus_nudity: bool = True) -> tuple:
     """Get test prompts (safe and unsafe)."""
     data_config = DataConfig(
         num_safe_samples=num_samples // 2,
@@ -184,10 +209,19 @@ def get_test_prompts(num_samples: int = 50, seed: int = 42) -> tuple:
         random_seed=seed,
     )
     
-    # Load unsafe prompts
+    # Load unsafe prompts with nudity filtering
     try:
         i2p = I2PDataset(data_config)
-        unsafe_prompts = i2p.get_prompts(max_samples=num_samples // 2)
+        i2p.load()
+        unsafe_data = i2p.get_prompts(
+            max_samples=num_samples // 2,
+            hard_only=True,  # Only hard prompts
+            min_inappropriate_pct=60.0,  # At least 60% inappropriate
+            min_nudity_pct=50.0 if focus_nudity else 0.0,  # At least 50% nudity
+            focus_nudity_gore=focus_nudity,  # Focus on nudity only
+        )
+        # Extract prompt strings from dicts
+        unsafe_prompts = [item['prompt'] for item in unsafe_data]
         unsafe_labels = [1] * len(unsafe_prompts)
     except Exception as e:
         print(f"Warning: Could not load I2P dataset: {e}")
@@ -201,9 +235,9 @@ def get_test_prompts(num_samples: int = 50, seed: int = 42) -> tuple:
     )
     safe_labels = [0] * len(safe_prompts)
     
-    # Combine
+    # Combine (unsafe_prompts is already a list of strings)
     all_prompts = [p['prompt'] if isinstance(p, dict) else p for p in safe_prompts]
-    all_prompts.extend([p['prompt'] if isinstance(p, dict) else p for p in unsafe_prompts])
+    all_prompts.extend(unsafe_prompts)  # Already extracted as strings
     
     all_labels = safe_labels + unsafe_labels
     
@@ -492,7 +526,11 @@ def main():
     
     # Create environment
     print("\nCreating environment...")
-    prompts, labels = get_test_prompts(num_samples=args.num_samples, seed=42)
+    prompts, labels = get_test_prompts(
+        num_samples=args.num_samples, 
+        seed=42,
+        focus_nudity=True  # Focus on nudity only
+    )
     
     env = DiffusionSteeringEnv(
         config=env_config,
@@ -525,14 +563,12 @@ def main():
     obs_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     
-    # Policy architecture (from training config)
-    hidden_dims = [256, 128]
-    
+    # Load policy (will auto-detect architecture from checkpoint)
     policy = load_policy(
         policy_path=args.policy_path,
         obs_dim=obs_dim,
         action_dim=action_dim,
-        hidden_dims=hidden_dims,
+        hidden_dims=None,  # Auto-detect from checkpoint
         device=device,
     )
     
