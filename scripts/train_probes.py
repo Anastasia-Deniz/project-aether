@@ -18,7 +18,7 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 
 import numpy as np
 import matplotlib
@@ -74,6 +74,18 @@ def parse_args():
         action="store_true",
         help="Use empirical FID/SSR measurements if available (requires quality_measurements.json)"
     )
+    parser.add_argument(
+        "--use_mlp",
+        action="store_true",
+        help="Use MLP probe instead of linear (for non-linearly separable concepts)"
+    )
+    parser.add_argument(
+        "--mlp_hidden_dims",
+        type=int,
+        nargs="+",
+        default=[256, 128],
+        help="Hidden dimensions for MLP probe (default: [256, 128])"
+    )
     
     return parser.parse_args()
 
@@ -107,21 +119,37 @@ def load_latents(latents_dir: Path) -> dict:
     return data
 
 
-def train_probe(X: np.ndarray, y: np.ndarray, test_split: float, seed: int, C: float):
-    """Train a single linear probe and return metrics."""
+def train_probe(X: np.ndarray, y: np.ndarray, test_split: float, seed: int, C: float, use_mlp: bool = False, mlp_hidden_dims: List[int] = None):
+    """Train a single linear or MLP probe and return metrics."""
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_split, random_state=seed, stratify=y
     )
     
-    # Train logistic regression
-    model = LogisticRegression(
-        C=C,
-        max_iter=1000,
-        random_state=seed,
-        solver='lbfgs',
-    )
-    model.fit(X_train, y_train)
+    if use_mlp:
+        # Train MLP probe
+        from sklearn.neural_network import MLPClassifier
+        
+        mlp_hidden_dims = mlp_hidden_dims or [256, 128]
+        model = MLPClassifier(
+            hidden_layer_sizes=tuple(mlp_hidden_dims),
+            max_iter=1000,
+            random_state=seed,
+            early_stopping=True,
+            validation_fraction=0.1,
+            n_iter_no_change=20,
+            alpha=1.0 / C,  # Convert C to alpha (regularization)
+        )
+        model.fit(X_train, y_train)
+    else:
+        # Train logistic regression
+        model = LogisticRegression(
+            C=C,
+            max_iter=1000,
+            random_state=seed,
+            solver='lbfgs',
+        )
+        model.fit(X_train, y_train)
     
     # Predictions
     y_pred_train = model.predict(X_train)
@@ -453,6 +481,8 @@ def main():
             test_split=args.test_split,
             seed=args.seed,
             C=args.regularization,
+            use_mlp=args.use_mlp,
+            mlp_hidden_dims=args.mlp_hidden_dims,
         )
     
     # Print accuracy summary
