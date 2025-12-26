@@ -25,8 +25,9 @@ import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend (no GUI needed)
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, roc_auc_score, classification_report
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold, cross_val_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import accuracy_score, roc_auc_score, classification_report, precision_score, recall_score, f1_score, confusion_matrix
 from tqdm import tqdm
 import torch
 
@@ -67,7 +68,29 @@ def parse_args():
         "--regularization",
         type=float,
         default=1.0,
-        help="Logistic regression regularization (C parameter)"
+        help="Logistic regression regularization (C parameter). Ignored if --tune_hyperparams is used."
+    )
+    parser.add_argument(
+        "--tune_hyperparams",
+        action="store_true",
+        help="Use grid search to tune hyperparameters (slower but better accuracy)"
+    )
+    parser.add_argument(
+        "--use_cv",
+        action="store_true",
+        help="Use cross-validation for more reliable metrics (slower but better estimates)"
+    )
+    parser.add_argument(
+        "--normalize_features",
+        action="store_true",
+        default=True,
+        help="Normalize features to zero mean, unit variance (recommended)"
+    )
+    parser.add_argument(
+        "--no_normalize_features",
+        action="store_false",
+        dest="normalize_features",
+        help="Disable feature normalization"
     )
     parser.add_argument(
         "--use_empirical",
@@ -119,53 +142,145 @@ def load_latents(latents_dir: Path) -> dict:
     return data
 
 
-def train_probe(X: np.ndarray, y: np.ndarray, test_split: float, seed: int, C: float, use_mlp: bool = False, mlp_hidden_dims: List[int] = None):
-    """Train a single linear or MLP probe and return metrics."""
+def train_probe(
+    X: np.ndarray, 
+    y: np.ndarray, 
+    test_split: float, 
+    seed: int, 
+    C: float, 
+    use_mlp: bool = False, 
+    mlp_hidden_dims: List[int] = None,
+    normalize_features: bool = True,
+    tune_hyperparams: bool = False,
+    use_cv: bool = False,
+):
+    """
+    Train a single linear or MLP probe and return metrics.
+    
+    Improvements:
+    - Feature standardization (normalize_features)
+    - Hyperparameter tuning (tune_hyperparams)
+    - Cross-validation metrics (use_cv)
+    - Enhanced metrics (precision, recall, F1)
+    """
+    # Feature normalization
+    scaler = None
+    if normalize_features:
+        scaler = StandardScaler()
+        X = scaler.fit_transform(X)
+    
     # Split data
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=test_split, random_state=seed, stratify=y
     )
     
-    if use_mlp:
-        # Train MLP probe
-        from sklearn.neural_network import MLPClassifier
-        
-        mlp_hidden_dims = mlp_hidden_dims or [256, 128]
-        model = MLPClassifier(
-            hidden_layer_sizes=tuple(mlp_hidden_dims),
-            max_iter=1000,
-            random_state=seed,
-            early_stopping=True,
-            validation_fraction=0.1,
-            n_iter_no_change=20,
-            alpha=1.0 / C,  # Convert C to alpha (regularization)
-        )
-        model.fit(X_train, y_train)
-    else:
-        # Train logistic regression
-        model = LogisticRegression(
-            C=C,
+    # Cross-validation metrics (if requested)
+    cv_scores = None
+    cv_mean = None
+    cv_std = None
+    
+    if use_cv:
+        cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed)
+        if use_mlp:
+            from sklearn.neural_network import MLPClassifier
+            mlp_hidden_dims = mlp_hidden_dims or [256, 128]
+            cv_model = MLPClassifier(
+                hidden_layer_sizes=tuple(mlp_hidden_dims),
+                max_iter=1000,
+                random_state=seed,
+                early_stopping=True,
+                validation_fraction=0.1,
+                n_iter_no_change=20,
+                alpha=1.0 / C,
+            )
+        else:
+            cv_model = LogisticRegression(
+                C=C,
+                max_iter=1000,
+                random_state=seed,
+                solver='lbfgs',
+            )
+        cv_scores = cross_val_score(cv_model, X_train, y_train, cv=cv, scoring='roc_auc')
+        cv_mean = cv_scores.mean()
+        cv_std = cv_scores.std()
+    
+    # Hyperparameter tuning (if requested)
+    if tune_hyperparams and not use_mlp:
+        param_grid = {'C': [0.01, 0.1, 1.0, 10.0, 100.0]}
+        base_model = LogisticRegression(
             max_iter=1000,
             random_state=seed,
             solver='lbfgs',
         )
-        model.fit(X_train, y_train)
+        cv_tune = StratifiedKFold(n_splits=3, shuffle=True, random_state=seed)  # Smaller CV for speed
+        grid_search = GridSearchCV(
+            base_model,
+            param_grid,
+            cv=cv_tune,
+            scoring='roc_auc',
+            n_jobs=-1,
+        )
+        grid_search.fit(X_train, y_train)
+        model = grid_search.best_estimator_
+        best_C = grid_search.best_params_['C']
+    else:
+        if use_mlp:
+            # Train MLP probe
+            from sklearn.neural_network import MLPClassifier
+            
+            mlp_hidden_dims = mlp_hidden_dims or [256, 128]
+            model = MLPClassifier(
+                hidden_layer_sizes=tuple(mlp_hidden_dims),
+                max_iter=1000,
+                random_state=seed,
+                early_stopping=True,
+                validation_fraction=0.1,
+                n_iter_no_change=20,
+                alpha=1.0 / C,  # Convert C to alpha (regularization)
+            )
+            model.fit(X_train, y_train)
+            best_C = C
+        else:
+            # Train logistic regression
+            model = LogisticRegression(
+                C=C,
+                max_iter=1000,
+                random_state=seed,
+                solver='lbfgs',
+            )
+            model.fit(X_train, y_train)
+            best_C = C
     
     # Predictions
     y_pred_train = model.predict(X_train)
     y_pred_test = model.predict(X_test)
     y_prob_test = model.predict_proba(X_test)[:, 1]
     
-    # Metrics
+    # Basic metrics
     train_acc = accuracy_score(y_train, y_pred_train)
     test_acc = accuracy_score(y_test, y_pred_test)
     auc = roc_auc_score(y_test, y_prob_test)
     
+    # Enhanced metrics
+    precision = precision_score(y_test, y_pred_test, zero_division=0)
+    recall = recall_score(y_test, y_pred_test, zero_division=0)
+    f1 = f1_score(y_test, y_pred_test, zero_division=0)
+    cm = confusion_matrix(y_test, y_pred_test)
+    
     return {
         'model': model,
+        'scaler': scaler,  # Save scaler for inference
         'train_acc': train_acc,
         'test_acc': test_acc,
         'auc': auc,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
+        'confusion_matrix': cm.tolist(),
+        'best_C': best_C,
+        'cv_mean': cv_mean,
+        'cv_std': cv_std,
+        'cv_scores': cv_scores.tolist() if cv_scores is not None else None,
         'X_test': X_test,
         'y_test': y_test,
         'y_pred': y_pred_test,
@@ -307,6 +422,9 @@ def plot_results(results: dict, sensitivity: dict, output_path: Path):
     train_accs = [results[t]['train_acc'] for t in timesteps]
     test_accs = [results[t]['test_acc'] for t in timesteps]
     aucs = [results[t]['auc'] for t in timesteps]
+    precisions = [results[t].get('precision', 0) for t in timesteps]
+    recalls = [results[t].get('recall', 0) for t in timesteps]
+    f1_scores = [results[t].get('f1', 0) for t in timesteps]
     
     sens_scores = [sensitivity[t]['score'] for t in timesteps]
     effectiveness = [sensitivity[t]['effectiveness'] for t in timesteps]
@@ -324,10 +442,14 @@ def plot_results(results: dict, sensitivity: dict, output_path: Path):
     ax1.plot(norm_t, train_accs, 'b--', label='Train Accuracy', linewidth=2, alpha=0.7)
     ax1.plot(norm_t, test_accs, 'b-', label='Test Accuracy', linewidth=2)
     ax1.plot(norm_t, aucs, 'g-', label='AUC', linewidth=2)
+    if any(precisions):
+        ax1.plot(norm_t, precisions, 'r:', label='Precision', linewidth=1.5, alpha=0.7)
+        ax1.plot(norm_t, recalls, 'm:', label='Recall', linewidth=1.5, alpha=0.7)
+        ax1.plot(norm_t, f1_scores, 'c:', label='F1', linewidth=1.5, alpha=0.7)
     ax1.set_xlabel('Normalized Timestep (0=noise, 1=image)')
     ax1.set_ylabel('Score')
     ax1.set_title('Linear Probe Performance by Timestep')
-    ax1.legend()
+    ax1.legend(fontsize=8)
     ax1.grid(True, alpha=0.3)
     ax1.set_ylim(0.4, 1.0)
     
@@ -379,6 +501,9 @@ def plot_results(results: dict, sensitivity: dict, output_path: Path):
     ─────────────────────────────────────────
     • Mean Test Accuracy:  {np.mean(test_accs):.3f} ± {np.std(test_accs):.3f}
     • Mean AUC:            {np.mean(aucs):.3f} ± {np.std(aucs):.3f}
+    • Mean Precision:      {np.mean(precisions):.3f} ± {np.std(precisions):.3f}
+    • Mean Recall:         {np.mean(recalls):.3f} ± {np.std(recalls):.3f}
+    • Mean F1:             {np.mean(f1_scores):.3f} ± {np.std(f1_scores):.3f}
     • Best Accuracy:       {max(test_accs):.3f} (at t={timesteps[np.argmax(test_accs)]})
     • Best AUC:            {max(aucs):.3f} (at t={timesteps[np.argmax(aucs)]})
     
@@ -429,10 +554,17 @@ def save_pytorch_probes(results: dict, output_dir: Path, latent_dim: int):
     probes_dir = output_dir / "pytorch"
     probes_dir.mkdir(exist_ok=True)
     
+    import pickle
+    
     for t, r in results.items():
         sklearn_model = r['model']
         probe = LinearProbe.from_sklearn(sklearn_model, latent_dim)
         torch.save(probe.state_dict(), probes_dir / f"probe_t{t:02d}.pt")
+        
+        # Also save scaler if available
+        if r.get('scaler') is not None:
+            with open(probes_dir / f"scaler_t{t:02d}.pkl", 'wb') as f:
+                pickle.dump(r['scaler'], f)
     
     print(f"Saved PyTorch probes to {probes_dir}")
 
@@ -483,13 +615,24 @@ def main():
             C=args.regularization,
             use_mlp=args.use_mlp,
             mlp_hidden_dims=args.mlp_hidden_dims,
+            normalize_features=args.normalize_features,
+            tune_hyperparams=args.tune_hyperparams,
+            use_cv=args.use_cv,
         )
     
     # Print accuracy summary
     print("\n--- Probe Accuracies ---", flush=True)
     for t in sorted(results.keys()):
         r = results[t]
-        print(f"  t={t:2d}: Train={r['train_acc']:.3f}, Test={r['test_acc']:.3f}, AUC={r['auc']:.3f}", flush=True)
+        cv_info = ""
+        if r.get('cv_mean') is not None:
+            cv_info = f", CV={r['cv_mean']:.3f}±{r['cv_std']:.3f}"
+        best_C_info = ""
+        if args.tune_hyperparams:
+            best_C_info = f", C={r['best_C']:.2f}"
+        print(f"  t={t:2d}: Train={r['train_acc']:.3f}, Test={r['test_acc']:.3f}, AUC={r['auc']:.3f}, "
+              f"Precision={r.get('precision', 0):.3f}, Recall={r.get('recall', 0):.3f}, F1={r.get('f1', 0):.3f}"
+              f"{cv_info}{best_C_info}", flush=True)
     
     # Compute sensitivity scores
     print("\n--- Computing Sensitivity Scores ---")
@@ -521,6 +664,12 @@ def main():
             'train_acc': r['train_acc'],
             'test_acc': r['test_acc'],
             'auc': r['auc'],
+            'precision': r.get('precision', 0),
+            'recall': r.get('recall', 0),
+            'f1': r.get('f1', 0),
+            'best_C': r.get('best_C', args.regularization),
+            'cv_mean': r.get('cv_mean'),
+            'cv_std': r.get('cv_std'),
         }
         for t, r in results.items()
     }

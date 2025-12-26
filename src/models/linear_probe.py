@@ -28,20 +28,31 @@ class LinearProbe(nn.Module):
     """
     Simple linear probe for concept detection.
     Follows Alain & Bengio (2016).
+    
+    Now supports feature normalization via scaler.
     """
     
-    def __init__(self, input_dim: int):
+    def __init__(self, input_dim: int, scaler=None):
         super().__init__()
         self.linear = nn.Linear(input_dim, 1)
+        self.scaler = scaler  # sklearn StandardScaler for normalization
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Returns logit (pre-sigmoid)."""
-        return self.linear(x.flatten(start_dim=1))
+        x_flat = x.flatten(start_dim=1)
+        
+        # Apply normalization if scaler is available
+        if self.scaler is not None:
+            x_np = x_flat.detach().cpu().numpy()
+            x_scaled = self.scaler.transform(x_np)
+            x_flat = torch.from_numpy(x_scaled).to(x.device).to(x.dtype)
+        
+        return self.linear(x_flat)
     
     @classmethod
-    def from_sklearn(cls, sklearn_model: LogisticRegression, input_dim: int) -> "LinearProbe":
+    def from_sklearn(cls, sklearn_model: LogisticRegression, input_dim: int, scaler=None) -> "LinearProbe":
         """Convert trained sklearn model to PyTorch module."""
-        probe = cls(input_dim)
+        probe = cls(input_dim, scaler=scaler)
         probe.linear.weight.data = torch.from_numpy(
             sklearn_model.coef_.astype(np.float32)
         )

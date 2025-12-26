@@ -207,7 +207,8 @@ class LatentCollector:
         latent = latent * self.pipe.scheduler.init_noise_sigma
         
         # Collect latents at each timestep
-        latents = {0: latent.cpu().numpy().astype(np.float16)}
+        # Use float32 instead of float16 for better precision (important for separability)
+        latents = {0: latent.cpu().numpy().astype(np.float32)}
         
         for i, t in enumerate(self.pipe.scheduler.timesteps):
             # Prepare input
@@ -234,8 +235,8 @@ class LatentCollector:
             # Scheduler step
             latent = self.pipe.scheduler.step(noise_pred, t, latent, return_dict=False)[0]
             
-            # Store latent
-            latents[i + 1] = latent.cpu().numpy().astype(np.float16)
+            # Store latent (use float32 for better precision)
+            latents[i + 1] = latent.cpu().numpy().astype(np.float32)
         
         # Decode final image
         image = self.pipe.vae.decode(
