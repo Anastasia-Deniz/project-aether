@@ -1,0 +1,77 @@
+# Project Aether - A100 FAST Configuration (1-2 hours training)
+# Optimized for Google Colab A100 GPU (40GB VRAM)
+# Ultra-fast training for quick experiments and testing
+# Target: Complete training in 1-2 hours while maintaining quality
+
+# Key optimizations for A100 FAST:
+# 1. Reduced timesteps: 100K → 50K (faster training)
+# 2. Larger batches: 128 (faster updates)
+# 3. Larger rollouts: 256 (better sample efficiency)
+# 4. Fewer epochs: 4 (faster updates, still effective)
+# 5. Smaller policy: [512, 256] (faster forward/backward)
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (smaller for speed)
+policy:
+  hidden_dims: [512, 256]  # Smaller than full A100 config
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (FAST mode)
+ppo:
+  learning_rate: 3.0e-4  # Higher for faster learning
+  
+  # Large batches and rollouts (A100 advantage)
+  n_steps: 256  # Large rollouts for sample efficiency
+  batch_size: 128  # Large batches for fast updates
+  n_epochs: 4  # Fewer epochs for speed
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Reduced timesteps for speed
+  # 50K timesteps should take ~1-2 hours on A100
+  total_timesteps: 50000
+
+# Reward settings
+reward:
+  lambda_transport: 0.5
+  probe_path: "auto"
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_colab_a100_fast"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: false  # Disabled for fastest training
+
+wandb:
+  enabled: false
+  project: "project-aether"
+  tags:
+    - "colab"
+    - "a100"
+    - "fast"
+

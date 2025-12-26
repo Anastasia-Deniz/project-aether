@@ -1,0 +1,82 @@
+# Project Aether - A100 BEST Configuration (3-4 hours training)
+# Optimized for Google Colab A100 GPU (40GB VRAM)
+# Maximum quality configuration - uses full A100 capabilities
+# Target: Best possible results with A100
+
+# Key optimizations for A100 BEST:
+# 1. Maximum timesteps: 200K (best final performance)
+# 2. Largest batches: 128 (fastest updates)
+# 3. Largest rollouts: 512 (best sample efficiency)
+# 4. More epochs: 8 (best convergence)
+# 5. Largest policy: [1024, 512, 256] (maximum capacity)
+# 6. Early stopping enabled (prevents overfitting)
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (maximum capacity)
+policy:
+  hidden_dims: [1024, 512, 256]  # Largest policy network
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (BEST mode)
+ppo:
+  learning_rate: 2.5e-4  # Slightly conservative for stability
+  
+  # Maximum batches and rollouts (A100 can handle it)
+  n_steps: 512  # Largest rollouts for best sample efficiency
+  batch_size: 128  # Large batches for fast updates
+  n_epochs: 8  # More epochs for best convergence
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Maximum timesteps for best performance
+  # 200K timesteps should take ~3-4 hours on A100
+  total_timesteps: 200000
+
+# Reward settings
+reward:
+  lambda_transport: 0.5  # Optimal from experiments
+  probe_path: "auto"
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_colab_a100_best"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true  # Enabled for best results
+    patience: 30000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false  # Enable if you want to track experiments
+  project: "project-aether"
+  tags:
+    - "colab"
+    - "a100"
+    - "best"
+    - "maximum"
+

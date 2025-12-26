@@ -1,0 +1,86 @@
+# Project Aether - A100 Optimized Configuration
+# Optimized for Google Colab A100 GPU (40GB VRAM)
+# A100 is significantly more powerful than T4:
+# - 2.5x more VRAM (40GB vs 16GB)
+# - Much faster compute (3-5x faster)
+# - Can handle much larger batch sizes and more aggressive training
+
+# Key optimizations for A100:
+# 1. Much larger batch sizes: 32 → 128 (4x increase)
+# 2. Larger rollouts: 64 → 256 (4x increase, better sample efficiency)
+# 3. More epochs: 4 → 6 (better convergence with larger batches)
+# 4. Larger policy network: [512, 256] → [1024, 512, 256] (more capacity)
+# 5. Can use more timesteps: 50K → 100K (better final performance)
+# 6. More aggressive learning rate: 2e-4 → 3e-4 (faster learning)
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"  # A100 can handle float16 efficiently
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  # Keep 20 steps for probe compatibility (probes trained with 20 steps)
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05  # Tighter clipping for better control
+  # Intervention window for 20 steps: [5, 15] (25%-75% of generation)
+  # Based on sensitivity analysis showing optimal window
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (larger capacity for A100)
+policy:
+  hidden_dims: [1024, 512, 256]  # Larger than T4 config [512, 256]
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (AGGRESSIVE for A100)
+ppo:
+  learning_rate: 3.0e-4  # Higher for faster learning (A100 can handle it)
+  
+  # A100 can handle MUCH larger batches and rollouts
+  n_steps: 256  # 4x larger than T4 fast config (64) - better sample efficiency
+  batch_size: 128  # 4x larger than T4 fast config (32) - faster updates
+  n_epochs: 6  # More epochs with larger batches for better convergence
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Can afford more timesteps with A100 speed
+  # 100K timesteps should take ~2-3 hours on A100 (vs 2-3 hours for 50K on T4)
+  total_timesteps: 100000
+
+# Reward settings (from best experiments)
+reward:
+  lambda_transport: 0.5  # Optimal from experiments
+  probe_path: "auto"  # Auto-detect latest probe
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_colab_a100"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true  # Can afford early stopping with faster training
+    patience: 20000  # More patience with larger batches
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false  # Disable by default for Colab
+  project: "project-aether"
+  tags:
+    - "colab"
+    - "a100"
+    - "optimized"
+
