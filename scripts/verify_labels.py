@@ -126,15 +126,17 @@ class CLIPSafetyClassifier:
             self.unsafe_embeds = self.model.get_text_features(**{k: v.to(device) for k, v in unsafe_inputs.items()})
     
     @torch.no_grad()
-    def predict(self, images: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def predict(self, images: np.ndarray, debug: bool = False) -> Tuple[np.ndarray, np.ndarray]:
         """
         Predict safety for images.
         
         Args:
             images: Array of images (N, H, W, C) in uint8 format
+            debug: If True, return additional debug info
             
         Returns:
             (predictions, probabilities) where predictions: 0=safe, 1=unsafe
+            If debug=True, also returns (safe_sim, unsafe_sim) tuple
         """
         if len(images.shape) == 3:
             images = images[np.newaxis, ...]
@@ -155,6 +157,9 @@ class CLIPSafetyClassifier:
         # Probability of being unsafe
         probs = torch.sigmoid(unsafe_sim - safe_sim).cpu().numpy()
         preds = (probs > 0.5).astype(int)
+        
+        if debug:
+            return preds, probs, (safe_sim.cpu().numpy(), unsafe_sim.cpu().numpy())
         
         return preds, probs
 
@@ -286,7 +291,23 @@ def verify_labels(
     verified_indices = []
     mismatches = []
     
+    # Statistics for debugging
+    stats = {
+        'total': 0,
+        'matches': 0,
+        'mismatches': 0,
+        'low_confidence': 0,
+        'safe_correct': 0,
+        'safe_incorrect': 0,
+        'unsafe_correct': 0,
+        'unsafe_incorrect': 0,
+        'confidence_scores': [],
+        'prob_scores': [],
+    }
+    
     for i in tqdm(range(len(X)), desc="Verifying"):
+        stats['total'] += 1
+        
         # Decode image
         try:
             image = decode_latent_to_image(pipe, X[i], device)
@@ -298,8 +319,12 @@ def verify_labels(
         predictions = {}
         
         if 'clip' in classifiers:
-            preds, probs = classifiers['clip'].predict(image)
+            preds, probs, (safe_sim, unsafe_sim) = classifiers['clip'].predict(image, debug=True)
             predictions['clip'] = (preds[0], probs[0])
+            # Store debug info for first few samples
+            if i < 5:
+                print(f"\n  Sample {i} (label={y[i]}): safe_sim={safe_sim[0]:.3f}, unsafe_sim={unsafe_sim[0]:.3f}, "
+                      f"prob={probs[0]:.3f}, pred={preds[0]}")
         
         if 'probe' in classifiers:
             latent_tensor = torch.from_numpy(X[i]).float().unsqueeze(0).to(device)
@@ -315,24 +340,95 @@ def verify_labels(
             avg_prob = np.mean([p[1] for p in predictions.values()])
             pred = 1 if avg_prob > 0.5 else 0
             confidence = abs(avg_prob - 0.5) * 2  # Normalize to [0, 1]
+            prob_used = avg_prob
         else:
-            pred, prob = predictions[method]
-            confidence = abs(prob - 0.5) * 2
+            pred, prob_used = predictions[method]
+            confidence = abs(prob_used - 0.5) * 2
+        
+        # Store statistics
+        stats['prob_scores'].append(prob_used)
+        stats['confidence_scores'].append(confidence)
         
         # Check if prediction matches label
         true_label = int(y[i])
         matches = (pred == true_label)
         
+        # Update statistics
+        if matches:
+            stats['matches'] += 1
+            if true_label == 0:
+                stats['safe_correct'] += 1
+            else:
+                stats['unsafe_correct'] += 1
+        else:
+            stats['mismatches'] += 1
+            if true_label == 0:
+                stats['safe_incorrect'] += 1
+            else:
+                stats['unsafe_incorrect'] += 1
+        
         if matches and confidence >= threshold:
             verified_indices.append(i)
         else:
+            reason = []
+            if not matches:
+                reason.append(f"prediction_mismatch (pred={pred}, true={true_label})")
+            if confidence < threshold:
+                reason.append(f"low_confidence ({confidence:.3f} < {threshold})")
+                stats['low_confidence'] += 1
+            
             mismatches.append({
                 'index': i,
                 'true_label': true_label,
                 'predicted': pred,
+                'prob': prob_used,
                 'confidence': confidence,
+                'reason': '; '.join(reason),
                 'prompt': all_prompts[i] if i < len(all_prompts) else f"Sample {i}",
             })
+    
+    # Print detailed statistics
+    print("\n" + "="*60)
+    print("VERIFICATION STATISTICS")
+    print("="*60)
+    print(f"Total samples: {stats['total']}")
+    print(f"Matches: {stats['matches']} ({100*stats['matches']/stats['total']:.1f}%)")
+    print(f"Mismatches: {stats['mismatches']} ({100*stats['mismatches']/stats['total']:.1f}%)")
+    print(f"\nLabel accuracy:")
+    print(f"  Safe (label=0): {stats['safe_correct']} correct, {stats['safe_incorrect']} incorrect")
+    print(f"  Unsafe (label=1): {stats['unsafe_correct']} correct, {stats['unsafe_incorrect']} incorrect")
+    print(f"\nConfidence statistics:")
+    if stats['confidence_scores']:
+        conf_scores = np.array(stats['confidence_scores'])
+        print(f"  Mean: {np.mean(conf_scores):.3f}")
+        print(f"  Median: {np.median(conf_scores):.3f}")
+        print(f"  Min: {np.min(conf_scores):.3f}")
+        print(f"  Max: {np.max(conf_scores):.3f}")
+        print(f"  Below threshold ({threshold}): {stats['low_confidence']} ({100*stats['low_confidence']/stats['total']:.1f}%)")
+    print(f"\nProbability statistics:")
+    if stats['prob_scores']:
+        prob_scores = np.array(stats['prob_scores'])
+        print(f"  Mean: {np.mean(prob_scores):.3f}")
+        print(f"  Median: {np.median(prob_scores):.3f}")
+        print(f"  Min: {np.min(prob_scores):.3f}")
+        print(f"  Max: {np.max(prob_scores):.3f}")
+        # Show distribution
+        safe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 0]
+        unsafe_probs = [p for i, p in enumerate(prob_scores) if y[i] == 1]
+        if safe_probs:
+            print(f"  Safe samples (label=0) - Mean prob: {np.mean(safe_probs):.3f}")
+        if unsafe_probs:
+            print(f"  Unsafe samples (label=1) - Mean prob: {np.mean(unsafe_probs):.3f}")
+    print("="*60)
+    
+    # Show sample mismatches for debugging
+    if len(mismatches) > 0:
+        print(f"\nSample mismatches (first 10):")
+        for mm in mismatches[:10]:
+            print(f"  Index {mm['index']}: True={mm['true_label']}, Pred={mm['predicted']}, "
+                  f"Prob={mm['prob']:.3f}, Conf={mm['confidence']:.3f}, Reason={mm['reason']}")
+        if len(mismatches) > 10:
+            print(f"  ... and {len(mismatches) - 10} more")
     
     print(f"\n✓ Verification complete!")
     print(f"  Verified samples: {len(verified_indices)}/{len(X)} ({100*len(verified_indices)/len(X):.1f}%)")
