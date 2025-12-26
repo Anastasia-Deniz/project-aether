@@ -137,15 +137,22 @@ def load_policy(
             print(f"  Using hidden_dims from checkpoint config: {hidden_dims}")
         else:
             # Infer from state_dict layer sizes
-            # shared.0.weight shape is [hidden_dim, obs_dim]
-            # shared.3.weight shape is [hidden_dim2, hidden_dim]
-            if 'shared.0.weight' in state_dict:
-                first_hidden = state_dict['shared.0.weight'].shape[0]
-                if 'shared.3.weight' in state_dict:
-                    second_hidden = state_dict['shared.3.weight'].shape[0]
-                    hidden_dims = [first_hidden, second_hidden]
-                else:
-                    hidden_dims = [first_hidden]
+            # Architecture: Linear -> LayerNorm -> ReLU -> Linear -> LayerNorm -> ReLU -> ...
+            # Linear layers are at indices 0, 3, 6, 9, ... (every 3rd layer)
+            # shared.0.weight shape is [hidden_dim1, obs_dim]
+            # shared.3.weight shape is [hidden_dim2, hidden_dim1]
+            # shared.6.weight shape is [hidden_dim3, hidden_dim2] (if exists)
+            hidden_dims = []
+            layer_idx = 0
+            while f'shared.{layer_idx}.weight' in state_dict:
+                weight_shape = state_dict[f'shared.{layer_idx}.weight'].shape
+                # First layer: [hidden_dim, obs_dim] - we want hidden_dim
+                # Subsequent layers: [hidden_dim, prev_hidden_dim] - we want hidden_dim
+                hidden_dim = weight_shape[0]
+                hidden_dims.append(hidden_dim)
+                layer_idx += 3  # Skip LayerNorm and ReLU layers
+            
+            if hidden_dims:
                 print(f"  Inferred hidden_dims from checkpoint: {hidden_dims}")
             else:
                 # Default fallback (from train_ppo_best.yaml)
@@ -159,7 +166,45 @@ def load_policy(
         activation="relu",
     ).to(device)
     
-    policy.load_state_dict(state_dict)
+    try:
+        policy.load_state_dict(state_dict, strict=True)
+    except RuntimeError as e:
+        # If loading fails, try to diagnose the issue
+        print(f"  ❌ Error loading checkpoint: {e}")
+        print(f"  Inferred hidden_dims: {hidden_dims}")
+        
+        # Check what Linear layers exist in checkpoint
+        checkpoint_linear_layers = []
+        for key in state_dict.keys():
+            if 'shared.' in key and '.weight' in key and 'LayerNorm' not in key:
+                parts = key.split('.')
+                if len(parts) >= 2 and parts[1].isdigit():
+                    idx = int(parts[1])
+                    dim = state_dict[key].shape[0]
+                    checkpoint_linear_layers.append((idx, dim))
+        
+        if checkpoint_linear_layers:
+            checkpoint_linear_layers.sort()
+            inferred_from_checkpoint = [dim for _, dim in checkpoint_linear_layers]
+            print(f"  Found Linear layers in checkpoint: {checkpoint_linear_layers}")
+            print(f"  Would infer hidden_dims as: {inferred_from_checkpoint}")
+            
+            # If different, try with correct architecture
+            if inferred_from_checkpoint != hidden_dims:
+                print(f"  Retrying with correct architecture: {inferred_from_checkpoint}")
+                policy = ActorCritic(
+                    obs_dim=obs_dim,
+                    action_dim=action_dim,
+                    hidden_dims=inferred_from_checkpoint,
+                    activation="relu",
+                ).to(device)
+                policy.load_state_dict(state_dict, strict=True)
+                print("  ✓ Successfully loaded with corrected architecture!")
+            else:
+                raise
+        else:
+            raise
+    
     policy.eval()
     
     print("[OK] Policy loaded successfully")
