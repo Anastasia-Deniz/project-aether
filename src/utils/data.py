@@ -64,8 +64,8 @@ class DataConfig:
     
     def __post_init__(self):
         if self.i2p_categories is None:
-            # Focus on high-harm concepts as per your project spec
-            self.i2p_categories = ["violence", "sexual", "shocking"]
+            # Focus on nudity only (sexual category)
+            self.i2p_categories = ["sexual"]
 
 
 class I2PDataset:
@@ -97,6 +97,9 @@ class I2PDataset:
         max_samples: Optional[int] = None,
         hard_only: bool = False,
         min_inappropriate_pct: float = 30.0,
+        min_nudity_pct: float = 0.0,
+        min_gore_pct: float = 0.0,  # Deprecated, kept for compatibility
+        focus_nudity_gore: bool = False,
     ) -> List[Dict]:
         """
         Get filtered prompts from I2P.
@@ -106,6 +109,9 @@ class I2PDataset:
             max_samples: Maximum number of samples to return
             hard_only: Only return "hard" prompts (>50% inappropriate)
             min_inappropriate_pct: Minimum inappropriate percentage threshold
+            min_nudity_pct: Minimum nudity percentage threshold (for nudity focus)
+            min_gore_pct: Minimum gore percentage threshold (for gore focus)
+            focus_nudity_gore: If True, prioritize nudity and gore categories only
             
         Returns:
             List of prompt dictionaries with metadata
@@ -114,10 +120,23 @@ class I2PDataset:
             self.load()
             
         categories = categories or self.config.i2p_categories
+        
+        # If focusing on nudity, adjust categories and thresholds
+        if focus_nudity_gore:
+            # Focus on sexual (nudity) category only
+            categories = ["sexual"]
+            # Increase thresholds for better quality
+            if min_nudity_pct == 0.0:
+                min_nudity_pct = 50.0  # At least 50% nudity for high quality
+            if min_inappropriate_pct < 60.0:
+                min_inappropriate_pct = 60.0  # At least 60% inappropriate overall
+        
         max_samples = max_samples or self.config.num_unsafe_samples
         
         filtered = []
         skipped_long = 0
+        skipped_low_threshold = 0
+        
         for item in self._dataset:
             # Check category filter
             item_cats = item["categories"].lower()
@@ -131,7 +150,14 @@ class I2PDataset:
                 
             # Check inappropriate percentage
             if item["inappropriate_percentage"] < min_inappropriate_pct:
+                skipped_low_threshold += 1
                 continue
+            
+            # Check nudity threshold (if focusing on nudity)
+            if focus_nudity_gore and "sexual" in item_cats:
+                if item.get("nudity_percentage", 0) < min_nudity_pct:
+                    skipped_low_threshold += 1
+                    continue
             
             # Check CLIP token limit (skip instead of truncate)
             if not is_prompt_valid(item["prompt"], max_tokens=77):
@@ -142,24 +168,48 @@ class I2PDataset:
                 "prompt": item["prompt"],
                 "categories": item["categories"],
                 "inappropriate_pct": item["inappropriate_percentage"],
-                "nudity_pct": item["nudity_percentage"],
+                "nudity_pct": item.get("nudity_percentage", 0),
                 "is_hard": item["hard"] == 1,
                 "label": 1,  # Unsafe
             })
             
             # Stop when we have enough (with some buffer for filtering)
-            if len(filtered) >= max_samples * 2:
+            if len(filtered) >= max_samples * 3:  # Increased buffer for stricter filtering
                 break
         
-        # Shuffle and limit
-        random.seed(self.config.random_seed)
-        random.shuffle(filtered)
-        
-        result = filtered[:max_samples]
-        if skipped_long > 0:
-            print(f"Selected {len(result)} unsafe prompts from I2P (skipped {skipped_long} prompts exceeding 77 CLIP tokens)")
+        # Sort by quality (higher nudity percentages first)
+        if focus_nudity_gore:
+            # Prioritize by nudity_pct for sexual content
+            filtered.sort(key=lambda x: (
+                x.get("nudity_pct", 0),
+                x["inappropriate_pct"]
+            ), reverse=True)
         else:
-            print(f"Selected {len(result)} unsafe prompts from I2P")
+            # Sort by inappropriate percentage
+            filtered.sort(key=lambda x: x["inappropriate_pct"], reverse=True)
+        
+        # Limit to requested samples
+        result = filtered[:max_samples]
+        
+        # Print statistics
+        stats_msg = f"Selected {len(result)} unsafe prompts from I2P"
+        if focus_nudity_gore:
+            stats_msg += f" (focus: nudity only, nudity≥{min_nudity_pct}%)"
+        if skipped_long > 0:
+            stats_msg += f" (skipped {skipped_long} prompts exceeding 77 CLIP tokens)"
+        if skipped_low_threshold > 0:
+            stats_msg += f" (skipped {skipped_low_threshold} prompts below thresholds)"
+        print(stats_msg)
+        
+        # Print category breakdown
+        if result:
+            cat_counts = {}
+            for item in result:
+                for cat in item["categories"].split(", "):
+                    cat = cat.strip().lower()
+                    cat_counts[cat] = cat_counts.get(cat, 0) + 1
+            print(f"Category breakdown: {dict(sorted(cat_counts.items(), key=lambda x: -x[1]))}")
+        
         return result
     
     def get_category_distribution(self) -> Dict[str, int]:

@@ -101,19 +101,19 @@ def parse_args():
     parser.add_argument(
         "--total_timesteps",
         type=int,
-        default=500000,
+        default=60000,
         help="Total training timesteps"
     )
     parser.add_argument(
         "--n_steps",
         type=int,
-        default=2048,
+        default=64,
         help="Steps per rollout"
     )
     parser.add_argument(
         "--batch_size",
         type=int,
-        default=64,
+        default=8,
         help="Minibatch size"
     )
     parser.add_argument(
@@ -257,6 +257,36 @@ def main():
         use_latent_encoder=True,
         encoded_latent_dim=256,
     )
+    
+    # Validate configuration
+    print(f"\nValidating configuration...", flush=True)
+    errors = []
+    
+    # Validate intervention window
+    if env_config.intervention_start < 0:
+        errors.append(f"intervention_start ({env_config.intervention_start}) must be >= 0")
+    if env_config.intervention_end > env_config.num_inference_steps:
+        errors.append(f"intervention_end ({env_config.intervention_end}) must be <= num_inference_steps ({env_config.num_inference_steps})")
+    if env_config.intervention_start >= env_config.intervention_end:
+        errors.append(f"intervention_start ({env_config.intervention_start}) must be < intervention_end ({env_config.intervention_end})")
+    
+    # Validate lambda
+    if env_config.lambda_transport < 0:
+        errors.append(f"lambda_transport ({env_config.lambda_transport}) must be >= 0")
+    if env_config.lambda_transport > 2.0:
+        errors.append(f"lambda_transport ({env_config.lambda_transport}) should typically be <= 2.0")
+    
+    # Validate steering dimension
+    if env_config.steering_dim <= 0:
+        errors.append(f"steering_dim ({env_config.steering_dim}) must be > 0")
+    
+    if errors:
+        print("\n❌ Configuration validation failed:", flush=True)
+        for error in errors:
+            print(f"  - {error}", flush=True)
+        sys.exit(1)
+    
+    print("✓ Configuration validated", flush=True)
     
     print(f"\nEnvironment config:", flush=True)
     print(f"  Model: {env_config.model_id}", flush=True)

@@ -1,0 +1,104 @@
+# Project Aether - Optimized PPO Training Configuration
+# Based on evaluation results and sensitivity analysis
+# Target: SSR >0.80, FPR <0.05, LPIPS <0.30
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"  # CRITICAL: Half precision saves ~50% VRAM
+
+# Environment settings
+env:
+  # Using Stable Diffusion 1.4 (CompVis) - less censored than SD 1.5
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  
+  # Low-rank steering dimension
+  steering_dim: 256
+  
+  # Action constraints (IMPROVED: tighter clipping)
+  max_action_norm: 0.05  # Reduced from 0.1 to prevent large actions
+  
+  # Intervention window (from sensitivity analysis: [2,6] for 8-step → [5,15] for 20-step)
+  # This corresponds to 25%-75% of generation (optimal from sensitivity analysis)
+  intervention_start: 5
+  intervention_end: 15
+  
+  # Latent encoder for reduced observation space
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (balanced capacity)
+policy:
+  # Slightly larger than minimal for better expressiveness
+  hidden_dims: [512, 256]  # Good balance of capacity and memory
+  activation: "relu"
+  latent_encoder_dim: 256
+
+# PPO hyperparameters (OPTIMIZED)
+ppo:
+  learning_rate: 1.5e-4  # Reduced from 3e-4 for more stable learning
+  
+  # Rollout settings (balanced for 6GB VRAM)
+  n_steps: 128  # Increased from 64 for better sample efficiency
+  batch_size: 8  # Keep small for memory
+  
+  n_epochs: 8  # More updates per rollout
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Longer training for better convergence
+  total_timesteps: 200000  # Increased from 50K-100K
+
+# Reward settings (CRITICAL IMPROVEMENTS)
+reward:
+  # FIX #1: Increase lambda to penalize large ineffective actions
+  # Analysis: Current SSR=0.13 with transport_cost=70.39 means actions are large but ineffective
+  # Solution: Increase lambda to force more efficient, smaller actions
+  lambda_transport: 0.8  # Increased from 0.5 (stronger penalty)
+  
+  # FIX #2: Use sensitivity-weighted transport cost
+  # From sensitivity_scores.json: timesteps 4,3,5,2,6 are most effective
+  # Weight transport cost by sensitivity scores to encourage intervention at optimal timesteps
+  use_sensitivity_weights: true
+  sensitivity_weights_path: "./checkpoints/probes/run_20251213_125128/sensitivity_scores.json"
+  
+  # FIX #3: Use best probe from sensitivity analysis
+  # Timestep 4 has highest sensitivity score (0.722)
+  probe_path: "auto"  # Auto-detect latest probe, or set to specific path
+  probe_timestep: 4  # Use best probe (t04) from sensitivity analysis
+  
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_optimized"
+  
+  # More frequent logging due to smaller rollouts
+  log_interval: 5
+  save_interval: 10000
+  
+  # Early stopping (more patient)
+  early_stopping:
+    enabled: true
+    patience: 50000  # Increased patience
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+# Weights & Biases logging
+wandb:
+  enabled: false  # Set to true if you have W&B account
+  project: "project-aether"
+  entity: null
+  tags:
+    - "phase2"
+    - "ppo"
+    - "steering"
+    - "optimized"
+    - "sensitivity-weighted"
+

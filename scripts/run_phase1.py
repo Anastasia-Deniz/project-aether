@@ -6,11 +6,12 @@ This script runs the full Phase 1 pipeline:
 1. Load datasets (I2P unsafe, Safe prompts)
 2. Collect latents at each timestep
 3. Train linear probes
-4. Generate layer sensitivity analysis
+4. (Optional) Measure empirical layer sensitivity (FID & SSR) ⭐ NEW
+5. Generate layer sensitivity analysis
 
 Usage:
     python scripts/run_phase1.py --num_samples 50 --quick
-    python scripts/run_phase1.py --num_samples 200 --full
+    python scripts/run_phase1.py --num_samples 200 --measure_empirical --use_empirical
 """
 
 import os
@@ -73,6 +74,16 @@ def parse_args():
         action="store_true",
         help="Save generated images"
     )
+    parser.add_argument(
+        "--measure_empirical",
+        action="store_true",
+        help="Measure empirical layer sensitivity (FID & SSR) - takes additional time"
+    )
+    parser.add_argument(
+        "--use_empirical",
+        action="store_true",
+        help="Use empirical measurements when training probes (requires --measure_empirical first)"
+    )
     
     return parser.parse_args()
 
@@ -123,6 +134,11 @@ def main():
             "--device", args.device,
             "--seed", str(args.seed),
             "--output_dir", f"./data/latents",
+            "--model_id", "CompVis/stable-diffusion-v1-4",
+            "--focus_nudity",
+            "--hard_only",
+            "--min_nudity_pct", "50.0",
+            "--min_inappropriate_pct", "60.0",
         ]
         
         if args.save_images:
@@ -153,6 +169,28 @@ def main():
     
     print(f"\nUsing latents from: {latents_dir}")
     
+    # Step 2.5: (Optional) Measure Empirical Layer Sensitivity
+    if args.measure_empirical:
+        # Find probe directory if available
+        probe_base = PROJECT_ROOT / "checkpoints" / "probes"
+        probe_dirs = sorted(probe_base.glob("run_*"))
+        probe_path = None
+        if probe_dirs:
+            probe_path = str(probe_dirs[-1] / "pytorch")
+        
+        measure_cmd = [
+            sys.executable, "scripts/measure_layer_sensitivity.py",
+            "--latents_dir", latents_dir,
+            "--num_samples", "20",
+            "--device", args.device,
+        ]
+        
+        if probe_path and Path(probe_path).exists():
+            measure_cmd.extend(["--probe_path", probe_path])
+        
+        run_command(measure_cmd, "Empirical Layer Sensitivity Measurement")
+        print("\n✓ Empirical measurements saved. Re-running probe training with --use_empirical...")
+    
     # Step 2: Train Probes
     probe_cmd = [
         sys.executable, "scripts/train_probes.py",
@@ -160,6 +198,9 @@ def main():
         "--output_dir", "./checkpoints/probes",
         "--seed", str(args.seed),
     ]
+    
+    if args.use_empirical or args.measure_empirical:
+        probe_cmd.append("--use_empirical")
     
     run_command(probe_cmd, "Probe Training & Sensitivity Analysis")
     
@@ -178,8 +219,12 @@ Next steps:
   3. If yes, proceed to Phase 2 (PPO training)
   4. Note the optimal intervention window from the analysis
   
+Optional: For better accuracy, run empirical measurement:
+  python scripts/measure_layer_sensitivity.py --latents_dir {latents_dir} --num_samples 20
+  python scripts/train_probes.py --latents_dir {latents_dir} --use_empirical
+  
 To run Phase 2:
-  python scripts/train_ppo.py --config configs/train_ppo.yaml
+  python scripts/train_ppo.py --config configs/train_ppo_best.yaml
 """)
 
 

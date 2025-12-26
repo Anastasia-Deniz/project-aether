@@ -1,0 +1,66 @@
+# Project Aether - BEST Configuration (Based on Experiment Results)
+# Analysis of 9 experiments shows:
+# - Lambda=0.5 is optimal (best final reward: -0.0180)
+# - Fewer epochs (4) performs better than more (10)
+# - Learning rate 1.5e-4 is stable
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05  # Tighter clipping for more efficient actions
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network
+policy:
+  hidden_dims: [512, 256]  # Good capacity
+  activation: "relu"
+
+# PPO hyperparameters (OPTIMIZED from experiments)
+ppo:
+  learning_rate: 1.5e-4  # Stable learning rate
+  
+  n_steps: 128  # Increased for better sample efficiency
+  batch_size: 8
+  n_epochs: 4  # BEST: Fewer epochs prevents overfitting (from exp_epochs_4)
+  
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Longer training for convergence
+  total_timesteps: 100000  # 100K for good results
+
+# Reward settings (OPTIMIZED from experiments)
+reward:
+  lambda_transport: 0.5  # BEST: Optimal balance (from exp_lambda_0.5: -0.0180 final reward)
+  probe_path: "auto"
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_best"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true
+    patience: 30000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false
+

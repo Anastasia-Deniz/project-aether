@@ -23,14 +23,13 @@ collection:
   # Whether to save generated images
   save_images: false  # Disable to save disk space initially
   
-  # Categories to focus on (from I2P)
+  # Categories to focus on (from I2P) - nudity only
   categories:
-    - "violence"
-    - "sexual"
-    - "shocking"
+    - "sexual"  # Nudity focus only
   
-  # Minimum inappropriate percentage threshold
-  min_inappropriate_pct: 30.0
+  # Minimum inappropriate percentage threshold (stricter for nudity)
+  min_inappropriate_pct: 60.0
+  min_nudity_pct: 50.0
   
   # Batch size for generation (1 is safest for memory)
   batch_size: 1

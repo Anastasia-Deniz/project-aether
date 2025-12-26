@@ -42,8 +42,8 @@ def parse_args():
     parser.add_argument(
         "--model_id", 
         type=str, 
-        default="CompVis/stable-diffusion-v1-4",  # SD 1.4 - less censored
-        help="HuggingFace model ID or local path"
+        default="CompVis/stable-diffusion-v1-4",  # SD 1.4 - best for uncensored content
+        help="HuggingFace model ID or local path. SD 1.4 is recommended for research as it's less censored than SD 1.5"
     )
     parser.add_argument(
         "--num_steps", 
@@ -63,19 +63,32 @@ def parse_args():
         "--categories", 
         type=str, 
         nargs="+",
-        default=["violence", "sexual", "shocking"],
-        help="I2P categories to use for unsafe prompts"
+        default=["sexual"],  # Focus on nudity only
+        help="I2P categories to use for unsafe prompts (default: sexual/nudity only)"
     )
     parser.add_argument(
         "--min_inappropriate_pct",
         type=float,
-        default=30.0,
+        default=50.0,  # Increased default threshold
         help="Minimum inappropriate percentage for I2P prompts"
+    )
+    parser.add_argument(
+        "--min_nudity_pct",
+        type=float,
+        default=50.0,  # Increased for better quality
+        help="Minimum nudity percentage for sexual/nudity prompts (default: 50%)"
     )
     parser.add_argument(
         "--hard_only",
         action="store_true",
-        help="Only use 'hard' prompts (>50% inappropriate rating)"
+        default=False,  # argparse doesn't support default=True with store_true
+        help="Only use 'hard' prompts (>50% inappropriate rating). Recommended for better quality."
+    )
+    parser.add_argument(
+        "--focus_nudity",
+        action="store_true",
+        default=False,  # argparse doesn't support default=True with store_true
+        help="Focus specifically on nudity category with stricter thresholds. Recommended for better quality unsafe images."
     )
     
     # Output settings
@@ -88,7 +101,14 @@ def parse_args():
     parser.add_argument(
         "--save_images",
         action="store_true",
-        help="Save generated images alongside latents"
+        default=True,
+        help="Save generated images alongside latents (default: True, use --no_save_images to disable)"
+    )
+    parser.add_argument(
+        "--no_save_images",
+        action="store_false",
+        dest="save_images",
+        help="Don't save images (faster, less disk space)"
     )
     
     # Compute settings
@@ -263,11 +283,28 @@ def main():
     )
     
     i2p = I2PDataset(data_config)
+    
+    # Default to focusing on nudity/gore for better quality unsafe images
+    # User can disable with --no_focus_nudity_gore if needed
+    focus_nudity = getattr(args, 'focus_nudity', True)
+    hard_only = getattr(args, 'hard_only', True)
+    
+    print(f"\nFiltering settings:")
+    print(f"  Categories: {args.categories}")
+    print(f"  Focus nudity: {focus_nudity} (use --focus_nudity to enable)")
+    print(f"  Hard prompts only: {hard_only} (use --hard_only to enable)")
+    print(f"  Min inappropriate: {args.min_inappropriate_pct}%")
+    if focus_nudity:
+        print(f"  Min nudity: {args.min_nudity_pct}%")
+    
     unsafe_prompts = i2p.get_prompts(
         categories=args.categories,
         max_samples=args.num_samples,
         min_inappropriate_pct=args.min_inappropriate_pct,
-        hard_only=args.hard_only,
+        min_nudity_pct=args.min_nudity_pct,
+        min_gore_pct=0.0,  # Not used for nudity-only focus
+        hard_only=hard_only,
+        focus_nudity_gore=focus_nudity,
     )
     
     # Load safe prompts

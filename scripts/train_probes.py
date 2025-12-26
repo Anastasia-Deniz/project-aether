@@ -18,6 +18,7 @@ import argparse
 import json
 from pathlib import Path
 from datetime import datetime
+from typing import Optional, Dict, Tuple
 
 import numpy as np
 import matplotlib
@@ -67,6 +68,11 @@ def parse_args():
         type=float,
         default=1.0,
         help="Logistic regression regularization (C parameter)"
+    )
+    parser.add_argument(
+        "--use_empirical",
+        action="store_true",
+        help="Use empirical FID/SSR measurements if available (requires quality_measurements.json)"
     )
     
     return parser.parse_args()
@@ -139,32 +145,72 @@ def train_probe(X: np.ndarray, y: np.ndarray, test_split: float, seed: int, C: f
     }
 
 
-def compute_sensitivity_scores(results: dict, num_steps: int) -> dict:
+def compute_sensitivity_scores(
+    results: dict, 
+    num_steps: int,
+    latents_dir: Optional[Path] = None,
+    use_empirical: bool = False,
+) -> dict:
     """
     Compute Layer Sensitivity Scores.
     
     S_ℓ = Acc_ℓ × Qual_ℓ × Eff_ℓ
     
-    For now, we estimate:
-    - Accuracy: from probe
-    - Quality: assume higher at early timesteps (more noise = easier to modify)
-    - Effectiveness: assume bell-curve peaked at middle timesteps
+    If use_empirical=True and latents_dir is provided, attempts to measure:
+    - Quality: FID between steered and unsteered images (1 - FID_norm)
+    - Effectiveness: SSR improvement from steering experiments
+    
+    Otherwise, uses improved heuristics based on probe accuracy patterns.
     """
     sensitivity = {}
+    
+    # Try to load empirical measurements if available
+    empirical_quality = {}
+    empirical_effectiveness = {}
+    
+    if use_empirical and latents_dir is not None:
+        try:
+            empirical_quality, empirical_effectiveness = _load_empirical_measurements(
+                latents_dir, num_steps
+            )
+            print(f"Loaded empirical measurements for {len(empirical_quality)} timesteps")
+        except Exception as e:
+            print(f"Warning: Could not load empirical measurements: {e}")
+            print("Falling back to improved heuristics")
+            use_empirical = False
     
     for t, r in results.items():
         acc = r['test_acc']
         
-        # Quality preservation estimate (heuristic)
-        # Early timesteps (high t index) have more noise, easier to steer without damage
-        # Late timesteps (low t index) are more crystallized
-        qual = 0.7 + 0.3 * (t / num_steps)  # Higher at early timesteps
+        # Quality preservation
+        if use_empirical and t in empirical_quality:
+            # Use measured FID (1 - FID_norm)
+            qual = empirical_quality[t]
+        else:
+            # Improved heuristic: quality depends on probe accuracy
+            # Higher accuracy = better concept separation = easier to steer without damage
+            # Early timesteps (high t) have more noise, easier to modify
+            # But we weight by accuracy: high accuracy timesteps are better for steering
+            base_qual = 0.6 + 0.3 * (t / num_steps)  # Base: higher at early timesteps
+            acc_weight = 0.1 * acc  # Bonus for high accuracy
+            qual = min(1.0, base_qual + acc_weight)
         
-        # Steering effectiveness estimate (heuristic)
-        # Bell curve - middle timesteps are most effective
-        mid = num_steps / 2
-        sigma = num_steps / 4
-        eff = np.exp(-((t - mid) ** 2) / (2 * sigma ** 2))
+        # Steering effectiveness
+        if use_empirical and t in empirical_effectiveness:
+            # Use measured SSR improvement
+            eff = empirical_effectiveness[t]
+        else:
+            # Improved heuristic: effectiveness peaks where accuracy is high
+            # Middle timesteps typically have best accuracy, so effectiveness peaks there
+            mid = num_steps / 2
+            sigma = num_steps / 3  # Slightly wider than before
+            
+            # Base bell curve
+            base_eff = np.exp(-((t - mid) ** 2) / (2 * sigma ** 2))
+            
+            # Weight by accuracy: high accuracy timesteps are more effective
+            acc_weight = 0.3 * acc
+            eff = min(1.0, base_eff * 0.7 + acc_weight)
         
         # Combined score
         score = acc * qual * eff
@@ -174,9 +220,40 @@ def compute_sensitivity_scores(results: dict, num_steps: int) -> dict:
             'quality': qual,
             'effectiveness': eff,
             'score': score,
+            'measured': use_empirical and (t in empirical_quality or t in empirical_effectiveness),
         }
     
     return sensitivity
+
+
+def _load_empirical_measurements(latents_dir: Path, num_steps: int) -> tuple:
+    """
+    Load empirical quality and effectiveness measurements if available.
+    
+    Looks for:
+    - quality_measurements.json: {timestep: 1 - FID_norm}
+    - effectiveness_measurements.json: {timestep: SSR_improvement}
+    
+    Returns:
+        (quality_dict, effectiveness_dict)
+    """
+    quality = {}
+    effectiveness = {}
+    
+    quality_file = latents_dir / "quality_measurements.json"
+    effectiveness_file = latents_dir / "effectiveness_measurements.json"
+    
+    if quality_file.exists():
+        with open(quality_file, 'r') as f:
+            quality_data = json.load(f)
+            quality = {int(k): float(v) for k, v in quality_data.items()}
+    
+    if effectiveness_file.exists():
+        with open(effectiveness_file, 'r') as f:
+            effectiveness_data = json.load(f)
+            effectiveness = {int(k): float(v) for k, v in effectiveness_data.items()}
+    
+    return quality, effectiveness
 
 
 def find_optimal_window(sensitivity: dict, top_k: int = 5) -> tuple:
@@ -386,7 +463,20 @@ def main():
     
     # Compute sensitivity scores
     print("\n--- Computing Sensitivity Scores ---")
-    sensitivity = compute_sensitivity_scores(results, num_steps)
+    latents_dir = Path(args.latents_dir)
+    sensitivity = compute_sensitivity_scores(
+        results, 
+        num_steps,
+        latents_dir=latents_dir,
+        use_empirical=args.use_empirical,
+    )
+    
+    # Report measurement status
+    measured_count = sum(1 for s in sensitivity.values() if s.get('measured', False))
+    if measured_count > 0:
+        print(f"Using empirical measurements for {measured_count}/{len(sensitivity)} timesteps")
+    else:
+        print("Using improved heuristics (run with --use_empirical to enable empirical measurements)")
     
     start, end, top_t = find_optimal_window(sensitivity)
     print(f"Optimal intervention window: [{start}, {end}]")

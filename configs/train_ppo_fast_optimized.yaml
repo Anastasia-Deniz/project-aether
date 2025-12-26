@@ -1,0 +1,63 @@
+# Project Aether - Fast Optimized Training Config
+# Optimized for QUICK training with MAXIMUM effectiveness
+# Uses all critical fixes + best practices for fast convergence
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 0.05  # Tighter clipping for better control
+  intervention_start: 5   # Scaled from [2,6] for 8-step to [5,15] for 20-step
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+  lambda_transport: 0.7  # Balanced: strong enough penalty but not too restrictive
+
+# Policy network (good capacity for learning)
+policy:
+  hidden_dims: [512, 256]
+  activation: "relu"
+
+# PPO hyperparameters (OPTIMIZED for fast learning)
+ppo:
+  learning_rate: 2.5e-4  # Higher LR for faster learning
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  
+  # Optimized for speed + effectiveness
+  n_steps: 128  # Larger rollouts = better sample efficiency
+  batch_size: 16  # Larger batches = faster updates (if memory allows)
+  n_epochs: 8  # More epochs per rollout = extract more learning
+  
+  # FAST: 30K timesteps (~45-90 min on RTX 4050)
+  # This is a good balance: enough to learn but not too long
+  total_timesteps: 30000
+
+# Reward settings (CRITICAL FIXES)
+reward:
+  lambda_transport: 0.7  # Balanced penalty
+  probe_path: "auto"  # Will auto-detect and use best probe (timestep 4)
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_fast_optimized"
+  log_interval: 3
+  save_interval: 5000
+  early_stopping:
+    enabled: false
+
+wandb:
+  enabled: false
+

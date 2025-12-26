@@ -386,19 +386,61 @@ class AetherPPOTrainer:
             self._init_wandb()
     
     def _load_probe(self, probe_path: str):
-        """Load a pre-trained linear probe for the environment."""
+        """Load a pre-trained linear probe for the environment.
+        
+        Uses the best probe from sensitivity analysis (timestep 4) if available,
+        otherwise falls back to middle timestep or any available probe.
+        """
         from src.models.linear_probe import LinearProbe
+        import json
         
         probe_path = Path(probe_path)
+        probe_file = None
+        
         if probe_path.is_dir():
-            # Find the best probe (highest timestep sensitivity)
-            probe_files = list(probe_path.glob("probe_t*.pt"))
-            if probe_files:
-                # Use middle timestep probe as default
-                probe_file = sorted(probe_files)[len(probe_files) // 2]
-            else:
-                print(f"No probe files found in {probe_path}")
-                return
+            # First, try to find sensitivity scores to get the best probe
+            sensitivity_file = probe_path.parent / "sensitivity_scores.json"
+            best_timestep = None
+            
+            if sensitivity_file.exists():
+                try:
+                    with open(sensitivity_file, 'r') as f:
+                        sensitivity_data = json.load(f)
+                    
+                    # Find timestep with highest score
+                    best_score = -1
+                    for t_str, data in sensitivity_data.items():
+                        if t_str == "optimal_window":
+                            continue
+                        if isinstance(data, dict) and 'score' in data:
+                            score = data['score']
+                            if score > best_score:
+                                best_score = score
+                                best_timestep = int(t_str)
+                    
+                    if best_timestep is not None:
+                        # Try to load the best probe
+                        probe_file = probe_path / f"probe_t{best_timestep:02d}.pt"
+                        if probe_file.exists():
+                            print(f"Using best probe from sensitivity analysis: timestep {best_timestep} (score: {best_score:.3f})")
+                except Exception as e:
+                    print(f"Could not read sensitivity scores: {e}")
+            
+            # Fallback: try timestep 4 (known to be best from analysis)
+            if probe_file is None or not probe_file.exists():
+                probe_file = probe_path / "probe_t04.pt"
+                if probe_file.exists():
+                    print(f"Using probe_t04.pt (best timestep from analysis)")
+            
+            # Fallback: use middle timestep
+            if probe_file is None or not probe_file.exists():
+                probe_files = list(probe_path.glob("probe_t*.pt"))
+                if probe_files:
+                    probe_file = sorted(probe_files)[len(probe_files) // 2]
+                    print(f"Using middle timestep probe: {probe_file.name}")
+                else:
+                    print(f"No probe files found in {probe_path}")
+                    return
         else:
             probe_file = probe_path
         
@@ -410,6 +452,7 @@ class AetherPPOTrainer:
         probe.eval()
         
         self.env.linear_probe = probe
+        print(f"[OK] Probe loaded and set in environment")
     
     def _init_wandb(self):
         """Initialize Weights & Biases logging."""

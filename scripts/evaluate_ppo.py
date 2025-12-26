@@ -76,25 +76,25 @@ def parse_args():
     parser.add_argument(
         "--model_id",
         type=str,
-        default="rupeshs/LCM-runwayml-stable-diffusion-v1-5",
+        default="CompVis/stable-diffusion-v1-4",
         help="HuggingFace model ID"
     )
     parser.add_argument(
         "--num_inference_steps",
         type=int,
-        default=8,
+        default=20,
         help="Number of diffusion steps"
     )
     parser.add_argument(
         "--intervention_start",
         type=int,
-        default=2,
+        default=5,
         help="Start step for intervention"
     )
     parser.add_argument(
         "--intervention_end",
         type=int,
-        default=6,
+        default=15,
         help="End step for intervention"
     )
     
@@ -286,9 +286,9 @@ def evaluate_policy(
         original_preds.append(orig_pred)
         
         # ===== Generate WITH steering (policy) =====
-        # Enable steering with optimal window
-        env.config.intervention_start = 2
-        env.config.intervention_end = 6
+        # Enable steering with configured window
+        env.config.intervention_start = args.intervention_start
+        env.config.intervention_end = args.intervention_end
         
         obs, info = env.reset(seed=i, options={'prompt': prompt})
         done = False

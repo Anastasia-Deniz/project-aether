@@ -122,6 +122,34 @@ class AetherConfig:
     # Steering projection initialization
     steering_init: str = "orthogonal"  # "orthogonal", "random", "learned"
     
+    def __post_init__(self):
+        """Validate configuration parameters."""
+        errors = []
+        
+        # Validate intervention window
+        if self.intervention_start < 0:
+            errors.append(f"intervention_start ({self.intervention_start}) must be >= 0")
+        if self.intervention_end > self.num_inference_steps:
+            errors.append(f"intervention_end ({self.intervention_end}) must be <= num_inference_steps ({self.num_inference_steps})")
+        if self.intervention_start >= self.intervention_end:
+            errors.append(f"intervention_start ({self.intervention_start}) must be < intervention_end ({self.intervention_end})")
+        
+        # Validate lambda
+        if self.lambda_transport < 0:
+            errors.append(f"lambda_transport ({self.lambda_transport}) must be >= 0")
+        
+        # Validate steering dimension
+        if self.steering_dim <= 0:
+            errors.append(f"steering_dim ({self.steering_dim}) must be > 0")
+        
+        # Validate action norm
+        if self.max_action_norm <= 0:
+            errors.append(f"max_action_norm ({self.max_action_norm}) must be > 0")
+        
+        if errors:
+            error_msg = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+            raise ValueError(error_msg)
+    
     @property
     def latent_dim(self) -> int:
         """Total flattened latent dimension."""
@@ -232,7 +260,9 @@ class DiffusionSteeringEnv(gym.Env):
         self.prompt_embeds = None
         self.negative_prompt_embeds = None
         self.trajectory = []  # Store for analysis
-        self.actions_taken = []
+        self.actions_taken = []  # Stores (timestep, action_norm_sq) tuples for weighted cost
+        self.sensitivity_weights = self._load_sensitivity_weights()
+        self.previous_probe_score = None  # For intermediate rewards
         
     def reset(
         self,
@@ -311,7 +341,8 @@ class DiffusionSteeringEnv(gym.Env):
         # Reset counters
         self.current_step = 0
         self.trajectory = []  # MEMORY OPTIMIZATION: Don't store trajectory during training
-        self.actions_taken = []  # Now stores scalar norms, not tensors
+        self.actions_taken = []  # Stores (timestep, action_norm_sq) tuples
+        self.previous_probe_score = None  # Reset for intermediate rewards
         
         # Get initial observation
         obs = self._get_observation()
@@ -404,25 +435,32 @@ class DiffusionSteeringEnv(gym.Env):
         
         # Only store action norms for transport cost (not full tensors)
         if should_intervene:
-            # Store just the squared norm, not the full tensor
+            # Store (timestep, action_norm_sq) for weighted cost
             action_norm_sq = delta_z.pow(2).sum().item()
-            self.actions_taken.append(action_norm_sq)
+            # Map current_step to timestep index (0-7 for 8-step, 0-19 for 20-step)
+            timestep_idx = self.current_step
+            self.actions_taken.append((timestep_idx, action_norm_sq))
         
         # Advance step counter
         self.current_step += 1
         terminated = self.current_step >= self.config.num_inference_steps
         
-        # Compute reward (only at terminal state for efficiency)
+        # Compute reward with intermediate shaping
         if terminated:
             reward = self._compute_final_reward()
         else:
-            reward = 0.0  # Intermediate reward is 0, final reward is all that matters
+            # Intermediate reward: small bonus for moving toward safety
+            reward = self._compute_intermediate_reward()
         
         # Get observation
         obs = self._get_observation()
         
         # Compute transport cost so far (actions_taken now stores scalar norms)
-        transport_cost = sum(self.actions_taken) if self.actions_taken else 0.0
+        transport_cost = (
+            sum(norm_sq for _, norm_sq in self.actions_taken)
+            if self.actions_taken
+            else 0.0
+        )
         
         info = {
             "timestep": 1.0 - (self.current_step / self.config.num_inference_steps),
@@ -500,13 +538,114 @@ class DiffusionSteeringEnv(gym.Env):
                 r_safe = 0.0  # No classifier, neutral reward
         
         # Transport cost (Wasserstein-inspired: Σ||Δz_t||²)
-        # actions_taken now stores scalar norms directly
-        transport_cost = sum(self.actions_taken) if self.actions_taken else 0.0
+        # Use sensitivity-weighted cost if available
+        if self.sensitivity_weights and self.actions_taken:
+            # Weight actions by sensitivity scores
+            weighted_cost = 0.0
+            for timestep_idx, action_norm_sq in self.actions_taken:
+                # Map timestep to sensitivity weight (scale from 8-step to current num_steps)
+                # Sensitivity analysis was for 8 steps, we have 20 steps
+                sensitivity_t = int(timestep_idx * 8 / self.config.num_inference_steps)
+                weight = self.sensitivity_weights.get(str(sensitivity_t), 1.0)
+                # Lower weight = more sensitive = less penalty (inverse relationship)
+                # So we divide by weight (higher sensitivity = lower penalty)
+                weighted_cost += action_norm_sq / (weight + 0.1)  # +0.1 to avoid division by zero
+            transport_cost = weighted_cost
+        else:
+            # Fallback: simple sum
+            transport_cost = sum(norm_sq for _, norm_sq in self.actions_taken) if self.actions_taken else 0.0
         
         # Final reward: R_safe - λ * W2_cost
-        reward = r_safe - self.config.lambda_transport * transport_cost
+        # Add efficiency bonus if achieved safety with low cost
+        efficiency_bonus = 0.0
+        if r_safe > 0 and transport_cost < 20.0:  # Achieved safety efficiently
+            efficiency_bonus = 0.3  # Increased bonus for faster learning
+        
+        # Add bonus for strong safety improvement (unsafe -> very safe)
+        safety_bonus = 0.0
+        if r_safe > 0.5:  # Very safe (prob_safe > 0.75)
+            safety_bonus = 0.2
+        
+        reward = r_safe - self.config.lambda_transport * transport_cost + efficiency_bonus + safety_bonus
         
         return reward
+    
+    def _load_sensitivity_weights(self) -> Optional[dict]:
+        """Load sensitivity weights from Phase 1 analysis."""
+        import json
+        from pathlib import Path
+        
+        # Find the most recent sensitivity scores file
+        candidates = sorted(
+            Path("checkpoints/probes").glob("run_*/sensitivity_scores.json"),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True,
+        )
+        for path in candidates:
+            try:
+                with open(path, 'r') as f:
+                    data = json.load(f)
+                    weights = {
+                        t: info.get('score', 1.0)
+                        for t, info in data.items()
+                        if t != "optimal_window" and isinstance(info, dict)
+                    }
+                    if weights:
+                        print(f"Loaded sensitivity weights from {path}")
+                        return weights
+            except Exception as e:
+                print(f"Warning: Could not load sensitivity weights from {path}: {e}")
+        
+        return None
+    
+    def _compute_intermediate_reward(self) -> float:
+        """
+        Compute intermediate reward for moving toward safety.
+        
+        Improved reward shaping:
+        - Probe improvement reward (moving toward safety)
+        - Transport cost penalty (encourages efficient steering)
+        - Safety maintenance bonus
+        """
+        if self.linear_probe is None:
+            # If no probe, only penalize large actions
+            if self.actions_taken:
+                last_action_norm_sq = self.actions_taken[-1][1]
+                return -0.01 * self.config.lambda_transport * last_action_norm_sq
+            return 0.0
+        
+        # Get current probe score
+        with torch.no_grad():
+            z_flat = self.current_latent.flatten().float()
+            current_score = self.linear_probe(z_flat.unsqueeze(0).to(self.device))
+            current_prob_safe = torch.sigmoid(-current_score).item()
+        
+        # Reward for moving toward safety (increasing prob_safe)
+        probe_reward = 0.0
+        if self.previous_probe_score is not None:
+            improvement = current_prob_safe - self.previous_probe_score
+            # Reward for improvement (0.1 max per step)
+            probe_reward = 0.1 * max(0, improvement)
+            
+            # Bonus if we're already safe and maintaining it
+            if current_prob_safe > 0.7:
+                probe_reward += 0.05
+        else:
+            probe_reward = 0.0
+        
+        # Transport cost penalty for current step (if action was taken)
+        transport_penalty = 0.0
+        if self.actions_taken:
+            # Get the most recent action norm
+            last_action_norm_sq = self.actions_taken[-1][1]
+            # Small penalty per step to encourage efficiency
+            # Scale by lambda_transport to match final reward structure
+            transport_penalty = -0.01 * self.config.lambda_transport * last_action_norm_sq
+        
+        self.previous_probe_score = current_prob_safe
+        
+        # Combined intermediate reward
+        return probe_reward + transport_penalty
     
     def render(self) -> np.ndarray:
         """Render the current latent as an image."""
