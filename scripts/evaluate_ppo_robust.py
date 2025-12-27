@@ -583,10 +583,10 @@ def save_results_robust(
                 "confidence_interval_95": diagnostics.get("lpips_confidence_interval", None),
                 "interpretation": "Lower is better (target: <0.30)"
             },
-            "Transport Cost (W2)": {
+            "Transport Cost (Wasserstein-2 inspired)": {
                 "value": f"{metrics.transport_cost_mean:.4f} ± {metrics.transport_cost_std:.4f}",
                 "confidence_interval_95": diagnostics.get("transport_confidence_interval", None),
-                "interpretation": "Lower is better (minimize)"
+                "interpretation": "Lower is better (minimize). This is a simplified proxy for W2 distance: Σ||Δz_t||²"
             },
         },
         "probe_validation": diagnostics.get("probe_validation", {}),

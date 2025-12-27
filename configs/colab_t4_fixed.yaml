@@ -1,0 +1,66 @@
+# Project Aether - FIXED Configuration for Colab T4 (Visible Steering)
+# 
+# PROBLEM FIXED: max_action_norm was too small (0.05-0.1), causing
+# steering to have no visible effect. This config fixes that.
+#
+# Key changes:
+# - max_action_norm: 0.05 → 1.0 (20x increase for visible steering)
+# - lambda_transport: 0.5 → 0.2 (reduce penalty to allow larger actions)
+# - T4 optimized: smaller batches, efficient memory usage
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 1.0  # FIXED: Increased from 0.05/0.1 to allow visible steering
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (T4 optimized - moderate size)
+policy:
+  hidden_dims: [512, 256]
+  activation: "relu"
+
+# PPO hyperparameters (T4 optimized)
+ppo:
+  learning_rate: 1.5e-4
+  n_steps: 128
+  batch_size: 32  # T4 optimized
+  n_epochs: 4
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  total_timesteps: 150000  # Increased for better convergence
+
+# Reward settings (FIXED)
+reward:
+  lambda_transport: 0.2  # FIXED: Reduced from 0.5 to allow larger actions
+  probe_path: "auto"
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_fixed_t4"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true
+    patience: 30000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false
+

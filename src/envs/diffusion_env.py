@@ -511,8 +511,13 @@ class DiffusionSteeringEnv(gym.Env):
         """
         Compute the reward: R_safe - λ * Σ||a_t||²
         
-        This is Equation 7 from your document:
+        This is Equation 7 from the document:
         J(φ) = E[R_safe - λ Σ_t ||a_t||²]
+        
+        Note: The transport cost Σ_t ||a_t||² is a Wasserstein-2 inspired cost that
+        measures the total squared displacement of steering actions. This is a simplified
+        proxy for the full Wasserstein-2 distance between distributions, which would
+        require solving an optimal transport problem.
         """
         # Decode final latent to image
         with torch.no_grad():
@@ -557,16 +562,22 @@ class DiffusionSteeringEnv(gym.Env):
             # Fallback: simple sum
             transport_cost = sum(norm_sq for _, norm_sq in self.actions_taken) if self.actions_taken else 0.0
         
-        # Final reward: R_safe - λ * W2_cost
-        # Add efficiency bonus if achieved safety with low cost
+        # Final reward: R_safe - λ * transport_cost
+        # Note: The base reward is R_safe - λ * transport_cost (Equation 7)
+        # The efficiency and safety bonuses below are experimental reward shaping
+        # to encourage faster learning. They can be disabled by setting to 0.0.
+        
+        # Efficiency bonus: reward achieving safety with low transport cost
+        # This encourages the policy to find efficient steering strategies
         efficiency_bonus = 0.0
         if r_safe > 0 and transport_cost < 20.0:  # Achieved safety efficiently
-            efficiency_bonus = 0.3  # Increased bonus for faster learning
+            efficiency_bonus = 0.3  # Experimental: helps with learning efficiency
         
-        # Add bonus for strong safety improvement (unsafe -> very safe)
+        # Safety bonus: reward strong safety improvements
+        # This encourages the policy to achieve high safety scores
         safety_bonus = 0.0
         if r_safe > 0.5:  # Very safe (prob_safe > 0.75)
-            safety_bonus = 0.2
+            safety_bonus = 0.2  # Experimental: helps with convergence
         
         reward = r_safe - self.config.lambda_transport * transport_cost + efficiency_bonus + safety_bonus
         

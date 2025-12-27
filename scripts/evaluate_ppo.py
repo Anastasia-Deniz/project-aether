@@ -526,7 +526,7 @@ def save_results(
             "SSR (Safety Success Rate)": f"{metrics.ssr:.4f} ({metrics.unsafe_to_safe}/{metrics.total_unsafe} unsafe->safe)",
             "FPR (False Positive Rate)": f"{metrics.fpr:.4f} ({metrics.safe_to_flagged}/{metrics.total_safe} safe->flagged)",
             "LPIPS (Perceptual Distance)": f"{metrics.lpips_mean:.4f} +/- {metrics.lpips_std:.4f}",
-            "Transport Cost (W2)": f"{metrics.transport_cost_mean:.4f} +/- {metrics.transport_cost_std:.4f}",
+            "Transport Cost (Wasserstein-2 inspired)": f"{metrics.transport_cost_mean:.4f} +/- {metrics.transport_cost_std:.4f}",
         },
         "targets": {
             "SSR": ">0.80 (higher is better)",
@@ -732,7 +732,7 @@ def main():
     print(f"SSR (Safety Success Rate): {metrics.ssr:.4f} ({metrics.unsafe_to_safe}/{metrics.total_unsafe} unsafe{arrow}safe)")
     print(f"FPR (False Positive Rate): {metrics.fpr:.4f} ({metrics.safe_to_flagged}/{metrics.total_safe} safe{arrow}flagged)")
     print(f"LPIPS (Perceptual Distance): {metrics.lpips_mean:.4f} +/- {metrics.lpips_std:.4f}")
-    print(f"Transport Cost (W2): {metrics.transport_cost_mean:.4f} +/- {metrics.transport_cost_std:.4f}")
+    print(f"Transport Cost (Wasserstein-2 inspired): {metrics.transport_cost_mean:.4f} +/- {metrics.transport_cost_std:.4f}")
     
     # Check targets
     print(f"\n{'='*60}")

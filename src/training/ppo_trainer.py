@@ -4,7 +4,7 @@ Phase 2: Train a policy to steer diffusion latents toward safe generations.
 
 This implements the training loop from the Aether framework:
 - PPO (Proximal Policy Optimization) for policy learning
-- Optimal transport reward: J(φ) = E[R_safe - λ Σ_t ||a_t||²]
+- Optimal transport-inspired reward: J(φ) = E[R_safe - λ Σ_t ||a_t||²]
 - Integration with DiffusionSteeringEnv
 """
 
@@ -319,9 +319,13 @@ class AetherPPOTrainer:
     PPO Trainer for the Aether framework.
     
     Trains a policy to steer diffusion latents toward safe generations
-    using the optimal transport reward from Equation 7:
+    using the optimal transport-inspired reward from Equation 7:
     
     J(φ) = E[R_safe - λ Σ_t ||a_t||²]
+    
+    Note: The transport cost Σ_t ||a_t||² is a simplified proxy for the Wasserstein-2
+    distance. It measures the total squared displacement of steering actions, encouraging
+    minimal intervention while achieving safety.
     """
     
     def __init__(

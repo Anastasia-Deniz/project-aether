@@ -1,11 +1,15 @@
 """
 Project Aether - Transport Reward Module
-Computes the optimal transport cost (Wasserstein-2 inspired).
+Computes the transport cost (Wasserstein-2 inspired).
 
 The transport cost penalizes large steering actions:
-W2_cost = Σ_t ||Δz_t||²
+Transport_cost = Σ_t ||Δz_t||²
 
-This encourages minimal intervention while achieving safety.
+Note: This is a simplified proxy for the Wasserstein-2 distance. The full W2 distance
+between distributions requires solving an optimal transport problem. Our formulation
+measures the total squared displacement of steering actions, which encourages
+minimal intervention while achieving safety. This is computationally efficient and
+provides a good approximation for the steering problem.
 """
 
 import torch
@@ -19,12 +23,17 @@ def compute_w2_cost(
     latent_dim: int = 16384,
 ) -> float:
     """
-    Compute Wasserstein-2 inspired transport cost.
+    Compute transport cost (Wasserstein-2 inspired).
     
-    W2_cost = Σ_t ||Δz_t||²
+    Transport_cost = Σ_t ||Δz_t||²
     
-    This measures the total "work" done by steering across all timesteps.
+    This measures the total squared displacement of steering actions across all timesteps.
     Lower cost = more efficient steering.
+    
+    Note: This is a simplified proxy for the Wasserstein-2 distance. The full W2 distance
+    between probability distributions requires solving an optimal transport problem.
+    Our formulation provides a computationally efficient approximation that encourages
+    minimal intervention while achieving safety.
     
     Args:
         actions: List of steering actions Δz_t at each timestep

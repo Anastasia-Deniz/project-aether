@@ -1,0 +1,66 @@
+# Project Aether - FIXED Configuration for Colab A100 (Visible Steering)
+# 
+# PROBLEM FIXED: max_action_norm was too small (0.05-0.1), causing
+# steering to have no visible effect. This config fixes that.
+#
+# Key changes:
+# - max_action_norm: 0.05 → 1.0 (20x increase for visible steering)
+# - lambda_transport: 0.5 → 0.2 (reduce penalty to allow larger actions)
+# - A100 optimized: larger batches, more timesteps
+
+# Compute settings
+compute:
+  device: "cuda"
+  dtype: "float16"
+
+# Environment settings
+env:
+  model_id: "CompVis/stable-diffusion-v1-4"
+  num_inference_steps: 20
+  guidance_scale: 7.5
+  steering_dim: 256
+  max_action_norm: 1.0  # FIXED: Increased from 0.05/0.1 to allow visible steering
+  intervention_start: 5
+  intervention_end: 15
+  use_latent_encoder: true
+  encoded_latent_dim: 256
+
+# Policy network (A100 optimized - larger capacity)
+policy:
+  hidden_dims: [1024, 512, 256]  # A100 can handle larger networks
+  activation: "relu"
+
+# PPO hyperparameters (A100 optimized)
+ppo:
+  learning_rate: 1.5e-4
+  n_steps: 256  # Larger rollouts for A100
+  batch_size: 128  # A100 can handle 4x larger batches
+  n_epochs: 6
+  gamma: 0.99
+  gae_lambda: 0.95
+  clip_range: 0.2
+  vf_coef: 0.5
+  ent_coef: 0.01
+  max_grad_norm: 0.5
+  total_timesteps: 150000  # Increased for better convergence
+
+# Reward settings (FIXED)
+reward:
+  lambda_transport: 0.2  # FIXED: Reduced from 0.5 to allow larger actions
+  probe_path: "auto"
+  safety_classifier: null
+
+# Training settings
+training:
+  experiment_name: "aether_ppo_fixed_a100"
+  log_interval: 5
+  save_interval: 10000
+  early_stopping:
+    enabled: true
+    patience: 30000
+    min_delta: 0.01
+    metric: "rollout/ep_rew_mean"
+
+wandb:
+  enabled: false
+

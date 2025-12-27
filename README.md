@@ -20,8 +20,8 @@ Generative models often reproduce undesired or unsafe concepts due to limited co
 - **Linear probing** for concept detection in latent space
 - **Empirical layer sensitivity analysis** with FID and SSR measurements
 - **Layer sensitivity analysis** to identify optimal intervention points
-- **Modular reward system** with separate safety (R_safe) and transport (W2) components
-- **Optimal transport reward** combining safety and semantic alignment
+- **Modular reward system** with separate safety (R_safe) and transport cost components
+- **Optimal transport-inspired reward** combining safety and semantic alignment (transport cost: Σ||Δz_t||²)
 - **Configuration validation** to prevent runtime errors
 - **Hyperparameter experiment framework** for systematic optimization
 - **Deterministic evaluation framework** with SSR, LPIPS, FPR, and transport cost metrics
@@ -223,7 +223,7 @@ project-aether/
 │   ├── models/             # Linear probes (linear_probe.py)
 │   ├── rewards/            # Reward computation
 │   │   ├── safety_reward.py    # Safety reward (probe-based or classifier-based)
-│   │   └── transport_reward.py # Transport cost (W2)
+│   │   └── transport_reward.py # Transport cost (Wasserstein-2 inspired)
 │   ├── training/           # PPO trainer
 │   │   └── ppo_trainer.py  # PPO algorithm implementation
 │   ├── evaluation/         # Evaluation metrics
@@ -381,10 +381,10 @@ py -3.11 scripts/quick_test.py
      - Records probe scores before/after steering
 
 4. **Metric Calculation**:
-   - **SSR**: Counts unsafe→safe conversions (using probe score improvements)
-   - **FPR**: Counts safe→flagged conversions (using probe score increases)
+   - **SSR**: Counts unsafe→safe conversions. Uses ground truth labels to identify originally unsafe samples, then checks if probe prediction after steering indicates safe (0). Formula: (unsafe samples that became safe) / (total unsafe samples)
+   - **FPR**: Counts safe→flagged conversions. Uses ground truth labels to identify originally safe samples, then checks if probe prediction after steering indicates unsafe (1). Formula: (safe samples flagged as unsafe) / (total safe samples)
    - **LPIPS**: Computes perceptual distance (deterministic)
-   - **Transport Cost**: Sums squared action norms (deterministic)
+   - **Transport Cost**: Sums squared action norms (Wasserstein-2 inspired cost, deterministic)
 
 5. **Result Saving**:
    - Saves metrics to JSON files
@@ -438,13 +438,13 @@ py -3.11 scripts/quick_test.py
 7. **Rombach, R., Blattmann, A., Lorenz, D., Esser, P., & Ommer, B. (2022).** "High-Resolution Image Synthesis with Latent Diffusion Models." CVPR 2022.  
    *Stable Diffusion architecture and latent space formulation.*
 
-### Optimal Transport
+### Optimal Transport (Inspiration)
 
 8. **Villani, C. (2009).** "Optimal Transport: Old and New." Springer.  
-   *Theoretical foundation for Wasserstein distance and optimal transport.*
+   *Theoretical foundation for Wasserstein distance and optimal transport. Note: Our transport cost Σ||Δz_t||² is inspired by Wasserstein-2 distance but is a simplified proxy that measures the total squared displacement of steering actions.*
 
 9. **Peyré, G., & Cuturi, M. (2019).** "Computational Optimal Transport." Foundations and Trends in Machine Learning, 11(5-6), 355-607.  
-   *Computational methods for optimal transport.*
+   *Computational methods for optimal transport. Our implementation uses the sum of squared action norms as a computationally efficient proxy for the full Wasserstein-2 distance between distributions.*
 
 ### Evaluation Metrics
 
