@@ -63,8 +63,8 @@ def parse_args():
     parser.add_argument(
         "--probe_path",
         type=str,
-        default="checkpoints/probes/run_20251213_125128/pytorch/",
-        help="Path to trained linear probes"
+        default="auto",
+        help="Path to trained linear probes (auto-detect from training config if policy_path provided)"
     )
     
     # Evaluation settings
@@ -655,6 +655,29 @@ def main():
     
     # Load probe if available
     if args.probe_path:
+        # Auto-detect from training config if probe_path is "auto"
+        if args.probe_path == "auto" and args.policy_path:
+            policy_dir = Path(args.policy_path).parent
+            config_file = policy_dir / "training_config.json"
+            if config_file.exists():
+                try:
+                    with open(config_file) as f:
+                        config = json.load(f)
+                        detected_probe_path = config.get('probe_path')
+                        if detected_probe_path:
+                            # Verify the probe still exists and has probe_t19.pt
+                            probe_t19_path = Path(detected_probe_path) / "probe_t19.pt"
+                            if probe_t19_path.exists():
+                                args.probe_path = detected_probe_path
+                                probe_run = config.get('probe_run', 'unknown')
+                                print(f"Auto-detected probe from training config: {probe_run}")
+                            else:
+                                print(f"Warning: Probe from training config missing probe_t19.pt, using fallback detection")
+                        else:
+                            print("Warning: Training config found but no probe_path specified")
+                except Exception as e:
+                    print(f"Warning: Could not load training config: {e}")
+
         try:
             probe_path = Path(args.probe_path)
             if probe_path.is_dir():

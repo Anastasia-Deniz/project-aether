@@ -352,21 +352,85 @@ def main():
     
     # Probe path - auto-detect if not provided or path doesn't exist
     probe_path = file_config.get('reward', {}).get('probe_path', args.probe_path)
-    
-    # Auto-detect latest probe if path is None, empty, or doesn't exist
+
+    # Auto-detect compatible probe if path is None, empty, or doesn't exist
     if not probe_path or probe_path == "auto" or (probe_path and not Path(probe_path).exists()):
-        print("Auto-detecting latest probe...")
-        probe_dirs = sorted(Path("checkpoints/probes").glob("run_*"), key=lambda p: p.stat().st_mtime if p.exists() else 0)
-        if probe_dirs:
-            latest_probe_dir = probe_dirs[-1] / "pytorch"
-            if latest_probe_dir.exists():
-                probe_path = str(latest_probe_dir)
-                print(f"Found latest probe: {probe_path}")
-            else:
-                print(f"Warning: Probe directory {latest_probe_dir} not found. Training without probe.")
-                probe_path = None
+        print("Auto-detecting compatible probe with probe_t19.pt...")
+
+        # Target parameters for compatibility
+        target_model = env_config.model_id
+        target_steps = env_config.num_inference_steps
+
+        print(f"Looking for probes trained on model: {target_model}, steps: {target_steps}")
+
+        # Find probes sorted by modification time (newest first)
+        probe_dirs = sorted(
+            Path("checkpoints/probes").glob("run_*"),
+            key=lambda p: p.stat().st_mtime if p.exists() else 0,
+            reverse=True  # Newest first
+        )
+
+        selected_probe = None
+        selected_latents_run = None
+
+        for probe_dir in probe_dirs:
+            pytorch_dir = probe_dir / "pytorch"
+            probe_t19 = pytorch_dir / "probe_t19.pt"
+
+            if not probe_t19.exists():
+                continue
+
+            # Check if this probe was trained on compatible latents
+            # Look for latent runs that match the probe timestamp
+            latents_dir = Path("data/latents")
+            if latents_dir.exists():
+                # Find latent runs with similar timestamps (within same day)
+                probe_timestamp = probe_dir.name.split('_')[1]  # Extract date from run_YYYYMMDD_HHMMSS
+                compatible_latents = []
+
+                for latent_run in latents_dir.glob("run_*"):
+                    latent_timestamp = latent_run.name.split('_')[1]
+                    # Check if timestamps are from the same day (first 8 chars = YYYYMMDD)
+                    if latent_timestamp[:8] == probe_timestamp[:8]:
+                        # Check metadata for compatibility
+                        metadata_file = latent_run / "metadata.json"
+                        if metadata_file.exists():
+                            try:
+                                with open(metadata_file) as f:
+                                    metadata = json.load(f)
+                                    latent_model = metadata.get('model_id')
+                                    latent_steps = metadata.get('num_steps')
+
+                                    if (latent_model == target_model and
+                                        latent_steps == target_steps):
+                                        compatible_latents.append((latent_run, metadata))
+                            except Exception:
+                                pass
+
+                if compatible_latents:
+                    # Use this probe - it's from compatible latents
+                    selected_probe = pytorch_dir
+                    selected_latents_run = compatible_latents[0][0].name
+                    print(f"Selected compatible probe: {probe_dir.name}")
+                    print(f"  Latents: {selected_latents_run}")
+                    print(f"  Model: {target_model}, Steps: {target_steps}")
+                    break
+
+        # Fallback: use most recent probe if no compatible one found
+        if not selected_probe:
+            print("No probe with compatible latents found, using most recent probe...")
+            for probe_dir in probe_dirs:
+                pytorch_dir = probe_dir / "pytorch"
+                probe_t19 = pytorch_dir / "probe_t19.pt"
+                if probe_t19.exists():
+                    selected_probe = pytorch_dir
+                    print(f"Selected fallback probe: {probe_dir.name} (most recent)")
+                    break
+
+        if selected_probe and selected_probe.exists():
+            probe_path = str(selected_probe)
         else:
-            print("Warning: No probe directories found. Training without probe.")
+            print("Warning: No probe with probe_t19.pt found. Training without probe.")
             probe_path = None
     
     # Create trainer

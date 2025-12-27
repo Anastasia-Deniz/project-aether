@@ -335,11 +335,12 @@ class AetherPPOTrainer:
     ):
         self.env = env
         self.config = config
+        self.probe_path = probe_path  # Store probe path for later saving
         self.device = config.device
         self.output_dir = Path(output_dir)
         self.experiment_name = experiment_name
         self.use_wandb = use_wandb and WANDB_AVAILABLE
-        
+
         # Create output directory
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.run_dir = self.output_dir / f"{experiment_name}_{timestamp}"
@@ -742,12 +743,44 @@ class AetherPPOTrainer:
         """Save training history to JSON."""
         # Convert numpy arrays to lists
         history_serializable = {
-            k: [float(v) for v in vals] 
+            k: [float(v) for v in vals]
             for k, vals in history.items()
         }
-        
+
         with open(self.run_dir / "training_history.json", 'w') as f:
             json.dump(history_serializable, f, indent=2)
+
+        # Save training configuration and probe info
+        training_config = {
+            'experiment_name': self.experiment_name,
+            'timestamp': datetime.now().isoformat(),
+            'probe_path': self.probe_path,
+            'probe_run': Path(self.probe_path).parent.name if self.probe_path else None,
+            'ppo_config': {
+                'learning_rate': self.config.learning_rate,
+                'gamma': self.config.gamma,
+                'gae_lambda': self.config.gae_lambda,
+                'clip_range': self.config.clip_range,
+                'vf_coef': self.config.vf_coef,
+                'ent_coef': self.config.ent_coef,
+                'max_grad_norm': self.config.max_grad_norm,
+                'n_steps': self.config.n_steps,
+                'batch_size': self.config.batch_size,
+                'n_epochs': self.config.n_epochs,
+                'total_timesteps': self.config.total_timesteps,
+            },
+            'env_config': {
+                'model_id': self.env.config.model_id if hasattr(self.env, 'config') else None,
+                'num_inference_steps': self.env.config.num_inference_steps if hasattr(self.env, 'config') else None,
+                'guidance_scale': self.env.config.guidance_scale if hasattr(self.env, 'config') else None,
+                'intervention_start': self.env.config.intervention_start if hasattr(self.env, 'config') else None,
+                'intervention_end': self.env.config.intervention_end if hasattr(self.env, 'config') else None,
+                'lambda_transport': self.env.config.lambda_transport if hasattr(self.env, 'config') else None,
+            }
+        }
+
+        with open(self.run_dir / "training_config.json", 'w') as f:
+            json.dump(training_config, f, indent=2)
 
 
 # Quick test
