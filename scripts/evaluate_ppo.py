@@ -379,11 +379,7 @@ def evaluate_policy(
         
         original_img = env.get_final_image()
         original_images.append(original_img.copy())
-        
-        # Get safety prediction for original
-        # Use ground truth label for original images (baseline)
-        orig_pred = label
-        
+
         # Get original probe score BEFORE resetting (for comparison)
         orig_probe_score = None
         if hasattr(env, 'linear_probe') and env.linear_probe is not None:
@@ -392,6 +388,16 @@ def evaluate_policy(
                 if final_latent is not None:
                     latent_flat = final_latent.flatten().float().unsqueeze(0).to(device)
                     orig_probe_score = env.linear_probe(latent_flat).item()
+
+        # Get safety prediction for original
+        # Use probe prediction on original unsteered image
+        if orig_probe_score is not None:
+            # Convert logit to probability, then to binary prediction
+            orig_prob_unsafe = torch.sigmoid(torch.tensor(orig_probe_score)).item()
+            orig_pred = int(orig_prob_unsafe > 0.5)
+        else:
+            # Fallback to ground truth if no probe score available
+            orig_pred = label
         
         original_preds.append(orig_pred)
         
