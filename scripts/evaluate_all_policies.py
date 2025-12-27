@@ -76,13 +76,29 @@ def evaluate_policy(policy_path: Path, num_samples: int = 50) -> Dict:
     policy_path = policy_path.resolve() if not policy_path.is_absolute() else policy_path
     eval_script = (project_root / "scripts" / "evaluate_ppo.py").resolve()
     
-    # Get probe path (auto-detect latest)
+    # Get probe path (auto-detect latest with probe_t19.pt)
     probe_dirs = sorted(
         (project_root / "checkpoints" / "probes").glob("run_*"),
         key=lambda p: p.stat().st_mtime if p.exists() else 0,
         reverse=True
     )
-    probe_path = str(probe_dirs[0] / "pytorch") if probe_dirs else None
+
+    # Find the most recent probe run that has probe_t19.pt
+    probe_path = None
+    for probe_dir in probe_dirs:
+        pytorch_dir = probe_dir / "pytorch"
+        probe_t19 = pytorch_dir / "probe_t19.pt"
+        if probe_t19.exists():
+            probe_path = str(pytorch_dir)
+            print(f"Using probe run: {probe_dir.name} (has probe_t19.pt)")
+            break
+
+    if probe_path is None and probe_dirs:
+        # Fallback: use the most recent probe run even if it doesn't have probe_t19.pt
+        probe_path = str(probe_dirs[0] / "pytorch")
+        print(f"Warning: No probe run with probe_t19.pt found, using latest: {probe_dirs[0].name}")
+    elif probe_path is None:
+        print("Warning: No probe directories found")
     
     # Build command with absolute paths
     if " " in python_exe:
