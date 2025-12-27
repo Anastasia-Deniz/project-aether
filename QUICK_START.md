@@ -22,8 +22,8 @@ python run_experiments_complete.py --skip_phase1
 # Phase 2: Train PPO
 py -3.11 scripts/train_ppo.py --config configs/train_ppo_best.yaml --probe_path checkpoints/probes/run_20251225_183438/pytorch/
 
-# Phase 3: Evaluate
-py -3.11 scripts/evaluate_ppo.py --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt --probe_path checkpoints/probes/run_20251225_183438/pytorch/ --num_samples 50
+# Phase 3: Evaluate (Robust - Recommended)
+py -3.11 scripts/evaluate_ppo_robust.py --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt --probe_path checkpoints/probes/run_20251225_183438/pytorch/ --num_samples 100 --seed 42
 ```
 
 ### Option 3: Use start_training.py (Fixed)

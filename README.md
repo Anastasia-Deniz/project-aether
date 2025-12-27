@@ -17,16 +17,15 @@ Generative models often reproduce undesired or unsafe concepts due to limited co
 ### Key Contributions
 
 - **Unified ODE framework** for diffusion models as deterministic probability flow
-- **Linear probing** for concept detection in latent space (90% accuracy achieved)
+- **Linear probing** for concept detection in latent space
 - **Empirical layer sensitivity analysis** with FID and SSR measurements
 - **Layer sensitivity analysis** to identify optimal intervention points
 - **Modular reward system** with separate safety (R_safe) and transport (W2) components
 - **Optimal transport reward** combining safety and semantic alignment
-- **Improved intermediate reward shaping** for faster learning
 - **Configuration validation** to prevent runtime errors
 - **Hyperparameter experiment framework** for systematic optimization
 - **Deterministic evaluation framework** with SSR, LPIPS, FPR, and transport cost metrics
-- **Robust evaluation system** with fixed seeds and correct metric calculations
+- **Robust evaluation system** with fixed seeds and statistical validation
 
 ---
 
@@ -60,11 +59,6 @@ The project follows a **three-phase pipeline** for training and evaluating the s
    - Output: Sensitivity scores indicating best timesteps for intervention
    - Optimal window: [5, 15] for 20-step generation (~25% to 75% of process)
 
-**Current State**: ✅ **Complete**
-- Latest probe run: `run_20251225_183438`
-- Probe accuracy: ~85-90% at optimal timesteps
-- Optimal intervention window: [5, 15] for 20-step generation
-
 ### Phase 2: PPO Policy Training
 
 **Goal**: Train a reinforcement learning policy to steer latents away from unsafe concepts.
@@ -89,102 +83,42 @@ The project follows a **three-phase pipeline** for training and evaluating the s
    - Metrics: policy loss, value loss, entropy, episode rewards
    - Checkpoints saved periodically for recovery
 
-**Current State**: ✅ **Multiple policies trained**
-- Best performing: `exp_lambda_0.8` (SSR: 0.72, FPR: 0.44)
-- Multiple experiments completed with different hyperparameters
-- Policies available in `outputs/ppo/`
 
 ### Phase 3: Evaluation
 
-**Goal**: Measure steering effectiveness with comprehensive, deterministic metrics.
+**Goal**: Measure steering effectiveness with comprehensive, deterministic metrics following academic standards.
 
 **Steps**:
 
-1. **Single Policy Evaluation** (`scripts/evaluate_ppo.py`)
+1. **Robust Policy Evaluation** (Recommended: `scripts/evaluate_ppo_robust.py`)
+   - Validates probe accuracy before evaluation
    - Loads trained policy and probe
    - Generates images with and without steering on test prompts
    - Computes metrics: SSR, FPR, LPIPS, Transport Cost
+   - **Statistical robustness**: Confidence intervals (95% CI) for continuous metrics
    - **Deterministic**: Uses fixed seed (default: 42) for reproducibility
-   - Output: Results saved to `outputs/evaluation/eval_YYYYMMDD_HHMMSS/`
+   - **Ground truth**: Uses dataset labels, not probe predictions
+   - Output: Results saved to `outputs/evaluation/eval_robust_YYYYMMDD_HHMMSS/`
+   - See [EVALUATION_GUIDE.md](EVALUATION_GUIDE.md) for detailed methodology
 
-2. **Batch Evaluation** (`scripts/evaluate_all_policies.py`)
+2. **Standard Policy Evaluation** (`scripts/evaluate_ppo.py`)
+   - Basic evaluation without probe validation
+   - Same metrics as robust version
+   - Use for quick checks or when probe is already validated
+
+3. **Batch Evaluation** (Recommended: `scripts/evaluate_all_policies_robust.py`)
    - Automatically finds all trained policies
-   - Evaluates each with same test set (deterministic)
-   - Compares results across policies
-   - Output: Summary of all evaluations
+   - Evaluates each using robust evaluation (with probe validation)
+   - Compares results with confidence intervals
+   - Generates comprehensive comparison report
+   - Output: Summary saved to `outputs/policies_comparison_robust.json`
+   
+   Standard version: `scripts/evaluate_all_policies.py` (uses basic evaluation)
 
-3. **Hyperparameter Search** (`scripts/hyperparameter_search.py`)
+4. **Hyperparameter Search** (`scripts/hyperparameter_search.py`)
    - Runs training + evaluation for multiple experiment configs
    - Compares results to find best hyperparameters
    - Output: Ranked list of experiments with metrics
-
-**Current State**: ✅ **Fully Deterministic & Robust**
-- **Deterministic evaluation**: Same seed → same results every time
-- **Correct metrics**: SSR and FPR now correctly calculated
-- **Fixed probe timestep mismatch**: Uses probe trained on final timestep (t=19)
-- **Simplified evaluation logic**: Direct probe predictions, no arbitrary thresholds
-- **Reliable safety assessment**: Ground truth baselines, trustworthy predictions
-
----
-
-## 📊 Evaluation Metrics (Current Implementation)
-
-### SSR (Safety Success Rate)
-**Formula**: `SSR = (Unsafe → Safe conversions) / (Total Unsafe prompts)`
-
-**How it's calculated** (FIXED):
-1. For each unsafe prompt (ground truth label=1):
-   - Original prediction: Uses **ground truth label** (baseline)
-   - Steered prediction: Uses **probe trained on final timestep** (t=19)
-   - Direct prediction: `steered_pred = int(probe_prob_unsafe > 0.5)`
-   - If steered prediction = 0 (safe) → counts as successful conversion
-
-**Target**: SSR > 0.80 (80% of unsafe images should become safe)
-
-**Reliability**: ✅ **Fixed** - Now uses probe trained on correct timestep
-
-### FPR (False Positive Rate)
-**Formula**: `FPR = (Safe → Flagged as Unsafe) / (Total Safe prompts)`
-
-**How it's calculated** (FIXED):
-1. For each safe prompt (ground truth label=0):
-   - Original prediction: Uses **ground truth label** (baseline)
-   - Steered prediction: Uses **probe trained on final timestep** (t=19)
-   - Direct prediction: `steered_pred = int(probe_prob_unsafe > 0.5)`
-   - If steered prediction = 1 (unsafe) → counts as false positive
-
-**Target**: FPR < 0.05 (less than 5% of safe images should be flagged)
-
-**Reliability**: ✅ **Fixed** - Now uses probe trained on correct timestep
-
-### LPIPS (Learned Perceptual Image Patch Similarity)
-**Formula**: Perceptual distance between original and steered images
-
-**How it's calculated**:
-- Uses LPIPS library (AlexNet backbone)
-- Measures perceptual similarity (not pixel-level)
-- Lower = more similar = better quality preservation
-
-**Target**: LPIPS < 0.30 (steered images should be perceptually similar to originals)
-
-**Current Results**: 
-- Typical range: 0.004 - 0.007 (excellent quality preservation)
-- Very low distortion from steering
-
-### Transport Cost (W2)
-**Formula**: `Transport Cost = Σ_t ||Δz_t||²` (sum of squared action norms)
-
-**How it's calculated**:
-- Sum of squared norms of all steering actions during intervention window
-- Measures "work" done by the policy
-- Lower = more efficient steering
-
-**Target**: Minimize (lower is better)
-
-**Current Results**:
-- Typical range: 200 - 600
-- Varies by lambda_transport hyperparameter
-- Higher lambda → lower transport cost (more efficient actions)
 
 ---
 
@@ -230,12 +164,19 @@ py -3.11 scripts/train_ppo.py \
     --config configs/train_ppo_best.yaml \
     --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/
 
-# Phase 3: Evaluate policy (DETERMINISTIC)
+# Phase 3: Evaluate policy (ROBUST, RECOMMENDED)
+py -3.11 scripts/evaluate_ppo_robust.py \
+    --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt \
+    --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/ \
+    --num_samples 100 \
+    --seed 42  # Fixed seed for reproducibility
+
+# Or use standard evaluation (faster, less validation)
 py -3.11 scripts/evaluate_ppo.py \
     --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt \
     --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/ \
-    --num_samples 50 \
-    --seed 42  # Fixed seed for reproducibility
+    --num_samples 100 \
+    --seed 42
 
 # Evaluate all policies
 py -3.11 scripts/evaluate_all_policies.py --num-samples 50
@@ -251,13 +192,9 @@ py -3.11 scripts/hyperparameter_search.py
 scripts\run_hyperparameter_search_py311.bat
 ```
 
-**For detailed instructions, see [SETUP_GUIDE.md](SETUP_GUIDE.md)**  
-**For hyperparameter search, see [HYPERPARAMETER_SEARCH.md](HYPERPARAMETER_SEARCH.md)**  
-**For evaluation fixes, see [EVALUATION_FIXES.md](EVALUATION_FIXES.md)**
-
 ---
 
-## 📋 Requirements
+## Requirements
 
 ### Minimum
 - Python 3.11 (required for experiments)
@@ -276,7 +213,7 @@ scripts\run_hyperparameter_search_py311.bat
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 project-aether/
@@ -323,7 +260,7 @@ project-aether/
 
 ---
 
-## 🔬 Key Features
+## Key Features
 
 ### Content Focus
 - **Nudity-only focus** for clearer concept boundaries
@@ -350,41 +287,6 @@ project-aether/
 
 ---
 
-## 📊 Results
-
-### Phase 1: Linear Probing
-- ✅ **85-90% accuracy** at optimal timesteps (4-5 for 20-step)
-- ✅ **97% AUC** at early timesteps
-- ✅ Linear separability confirmed
-- ✅ Optimal intervention window: [5, 15] (for 20-step generation)
-- ✅ Sensitivity analysis identifies best timesteps
-
-### Phase 2: PPO Training
-- ✅ Training completed successfully for multiple configurations
-- ✅ Policy loss decreased (learning confirmed)
-- ✅ Memory optimizations enable training on 6GB GPUs
-- ✅ Multiple hyperparameter experiments completed
-
-### Phase 3: Evaluation (Current State)
-
-**Evaluation System**: ✅ **Fully Deterministic & Robust**
-
-- **Determinism**: Fixed seeds ensure reproducible results
-- **Correct Metrics**: SSR and FPR properly calculated
-- **FPR Variation**: Now correctly varies by policy (not stuck at 0.44)
-
-**Best Results** (from `exp_lambda_0.8`):
-- **SSR**: 0.72 (72% of unsafe images converted to safe)
-- **FPR**: 0.44 (44% of safe images flagged as unsafe)
-- **LPIPS**: 0.0044 (excellent quality preservation)
-- **Transport Cost**: 446.56 (moderate efficiency)
-
-**Targets**:
-- SSR > 0.80 (currently 0.72, needs improvement)
-- FPR < 0.05 (currently 0.44, needs significant improvement)
-- LPIPS < 0.30 (currently 0.004, excellent)
-- Transport Cost: minimize (currently 446, moderate)
-
 **Evaluation Process**:
 1. Loads test prompts (50 samples: 25 safe, 25 unsafe)
 2. For each prompt:
@@ -392,7 +294,7 @@ project-aether/
    - Generates image **with** steering (policy, same seed=42+i)
    - Compares probe scores before/after steering
 3. Computes metrics deterministically
-4. Saves results to `outputs/evaluation/eval_YYYYMMDD_HHMMSS/`
+4. Saves results to `outputs/evaluation/eval_robust_YYYYMMDD_HHMMSS/` (with confidence intervals and probe validation)
 
 ---
 
@@ -443,17 +345,6 @@ py -3.11 tests/test_ppo.py
 # Quick component test
 py -3.11 scripts/quick_test.py
 ```
-
----
-
-## 📚 Documentation
-
-- **[SETUP_GUIDE.md](SETUP_GUIDE.md)** - Detailed setup and usage instructions
-- **[HYPERPARAMETER_SEARCH.md](HYPERPARAMETER_SEARCH.md)** - Hyperparameter experiments guide
-- **[EVALUATION_FIXES.md](EVALUATION_FIXES.md)** - Evaluation system fixes and determinism
-- **[CODEBASE_ANALYSIS.md](CODEBASE_ANALYSIS.md)** - Comprehensive codebase analysis
-- **[colab_setup.ipynb](colab_setup.ipynb)** - Google Colab setup notebook
-- **[configs/README.md](configs/README.md)** - Configuration guide
 
 ---
 

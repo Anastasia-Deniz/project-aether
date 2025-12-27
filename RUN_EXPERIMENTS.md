@@ -22,10 +22,10 @@ python run_experiments_complete.py --full
 python scripts/train_ppo.py --config configs/train_ppo_best.yaml --probe_path checkpoints/probes/run_20251225_183438/pytorch/
 ```
 
-#### Phase 3: Evaluate Policy
+#### Phase 3: Evaluate Policy (Robust - Recommended)
 
 ```powershell
-python scripts/evaluate_ppo.py --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt --probe_path checkpoints/probes/run_20251225_183438/pytorch/ --num_samples 50
+python scripts/evaluate_ppo_robust.py --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt --probe_path checkpoints/probes/run_20251225_183438/pytorch/ --num_samples 100 --seed 42
 ```
 
 ## Current Status

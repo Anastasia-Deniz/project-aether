@@ -292,14 +292,14 @@ def run_evaluation(
     if " " in python_exe:
         # Handle "py -3.11" style commands
         cmd = python_exe.split() + [
-            "scripts/evaluate_ppo.py",
+            "scripts/evaluate_ppo_robust.py",
             "--policy_path", str(policy_path),
             "--num_samples", str(num_samples),
         ]
     else:
         cmd = [
             python_exe,
-            "scripts/evaluate_ppo.py",
+            "scripts/evaluate_ppo_robust.py",
             "--policy_path", str(policy_path),
             "--num_samples", str(num_samples),
         ]

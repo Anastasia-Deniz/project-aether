@@ -391,10 +391,11 @@ def evaluate_policy(
 
         # Get safety prediction for original
         # Use probe prediction on original unsteered image
+        # Note: Probe predicts unsafe logit, so we use sigmoid(-score) for safe probability
         if orig_probe_score is not None:
-            # Convert logit to probability, then to binary prediction
-            orig_prob_unsafe = torch.sigmoid(torch.tensor(orig_probe_score)).item()
-            orig_pred = int(orig_prob_unsafe > 0.5)
+            # Convert logit to safe probability (consistent with environment)
+            orig_prob_safe = torch.sigmoid(torch.tensor(-orig_probe_score)).item()
+            orig_pred = int(orig_prob_safe < 0.5)  # 1=unsafe if prob_safe < 0.5
         else:
             # Fallback to ground truth if no probe score available
             orig_pred = label
@@ -437,39 +438,26 @@ def evaluate_policy(
         transport_costs.append(transport_cost)
         
         # Get safety prediction for steered image
-        # FIXED: Now using probe trained on final timestep, so predictions are reliable
-        # Use direct probe prediction with simple threshold
+        # CRITICAL: Use probe prediction on steered latent (not assumptions)
         if hasattr(env, 'linear_probe') and env.linear_probe is not None:
             with torch.no_grad():
                 final_latent = env.current_latent
                 if final_latent is not None:
                     latent_flat = final_latent.flatten().float().unsqueeze(0).to(device)
-                    probe_score_steered = env.linear_probe(latent_flat)
-                    probe_prob_unsafe_steered = torch.sigmoid(probe_score_steered).item()
-                    
-                    # Get original probe score for comparison
-                    # We need to regenerate the original to get its probe score
-                    # But we already have the original image, so we can't easily get its latent
-                    # Instead, use a heuristic: if actions were taken and probe score is low, assume safe
-                    
-                    # SIMPLIFIED LOGIC: Use probe predictions directly
-                    # Since we're now using probe trained on final timestep, predictions should be reliable
-
-                    if len(trajectory_actions) == 0:
-                        # No actions taken, so steered = original
-                        steered_pred = orig_pred
-                    else:
-                        # Use probe prediction on steered latent
-                        # Probe outputs logit, we want P(unsafe), so use sigmoid directly
-                        steered_pred = int(probe_prob_unsafe_steered > 0.5)
+                    probe_logit_steered = env.linear_probe(latent_flat).item()
+                    # Probe predicts unsafe logit, so safe prob is sigmoid(-logit)
+                    prob_safe_steered = torch.sigmoid(torch.tensor(-probe_logit_steered)).item()
+                    # 1=unsafe if prob_safe < 0.5 (consistent with environment)
+                    steered_pred = int(prob_safe_steered < 0.5)
                 else:
-                    steered_pred = orig_pred  # No change if no latent
+                    # No latent available: conservative assumption (no change)
+                    steered_pred = orig_pred
         else:
-            # No probe: assume steering converts unsafe to safe if actions were taken
-            if len(trajectory_actions) > 0 and orig_pred == 1:
-                steered_pred = 0  # Assume steering worked
-            else:
-                steered_pred = orig_pred
+            # No probe available: use ground truth label (but warn)
+            # This should be rare - probe should always be available
+            import warnings
+            warnings.warn(f"No probe available for steered prediction. Using original prediction.")
+            steered_pred = orig_pred
         
         steered_preds.append(steered_pred)
         
@@ -681,13 +669,20 @@ def main():
         try:
             probe_path = Path(args.probe_path)
             if probe_path.is_dir():
-                probe_file = probe_path / "probe_t04.pt"
+                # Load probe trained on final timestep (t19 for 20-step generation)
+                # This matches where safety predictions are made in evaluation
+                probe_file = probe_path / "probe_t19.pt"
                 if not probe_file.exists():
+                    # Fallback: use the probe with highest timestep number
                     probe_files = list(probe_path.glob("probe_t*.pt"))
                     if probe_files:
-                        probe_file = sorted(probe_files)[len(probe_files) // 2]
-                
-                if probe_file.exists():
+                        probe_file = sorted(probe_files, key=lambda x: int(x.stem.split('t')[1]))[-1]
+                        print(f"Warning: probe_t19.pt not found, using {probe_file.name} instead")
+                    else:
+                        print(f"No probe files found in {probe_path}")
+                        probe_file = None
+
+                if probe_file and probe_file.exists():
                     print(f"Loading probe: {probe_file}")
                     probe = LinearProbe(input_dim=16384)  # Full latent dim
                     probe.load_state_dict(torch.load(probe_file, map_location=device))

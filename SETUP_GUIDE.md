@@ -244,19 +244,20 @@ For Colab or time-constrained training, use optimized fast configs:
 
 ### 6. Phase 3: Evaluation
 
-**Evaluate trained policy:**
+**Evaluate trained policy (Robust - Recommended):**
 ```powershell
-py -3.11 scripts/evaluate_ppo.py `
+py -3.11 scripts/evaluate_ppo_robust.py `
     --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt `
     --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/ `
-    --num_samples 50 `
+    --num_samples 100 `
+    --seed 42 `
     --device cuda
 ```
 
 **Output location:**
-- Results: `outputs/evaluation/eval_YYYYMMDD_HHMMSS/`
+- Results: `outputs/evaluation/eval_robust_YYYYMMDD_HHMMSS/`
   - `evaluation_metrics.json` - Detailed metrics
-  - `evaluation_summary.json` - Summary with targets
+  - `evaluation_summary.json` - Summary with confidence intervals and probe validation
   - `sample_comparisons.png` - Visual comparison
 
 ## Full Pipeline (All Phases)
@@ -305,11 +306,12 @@ py -3.11 scripts/visualize_probe_results.py `
 # 3. Phase 2: PPO Training
 py -3.11 scripts/train_ppo.py --config configs/train_ppo_best.yaml
 
-# 4. Phase 3: Evaluation
-py -3.11 scripts/evaluate_ppo.py `
+# 4. Phase 3: Evaluation (Robust - Recommended)
+py -3.11 scripts/evaluate_ppo_robust.py `
     --policy_path outputs/ppo/aether_ppo_YYYYMMDD_HHMMSS/final_policy.pt `
     --probe_path checkpoints/probes/run_YYYYMMDD_HHMMSS/pytorch/ `
-    --num_samples 50
+    --num_samples 100 `
+    --seed 42
 ```
 
 ## Clearing Cache
